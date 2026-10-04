@@ -1,0 +1,16 @@
+PROJECT: deadline-guardian (app works locally)
+
+BLOCK 4 GOAL: deploy to Render free tier and hand it to my friend.
+
+TASKS:
+1. Fit in 512MB: lazy-load the embedding model, one uvicorn worker, no heavy deps.
+2. Set a project-local fastembed cache dir and warm it during the build so the first request isn't slow.
+3. render.yaml (or exact dashboard settings): Python web service, build: pip install -r requirements.txt (+ warm-up), start: uvicorn main:app --host 0.0.0.0 --port $PORT, health check /health.
+4. Env vars on Render: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL. No keys in the repo.
+5. Frontend shows "waking up the server, ~30s" on cold start.
+6. Push to GitHub with a clear README (what it is, who it's for, local run with Ollama, deploy steps).
+7. Smoke-test the live URL with real notes and fix failures.
+
+MANUAL (me): send the link to my friend, ask them to use it on real notes, collect honest feedback and a quote, take screenshots and a short screen recording, jot bugs/surprises in docs/notes.txt.
+
+DONE WHEN: the public Render URL works end to end and I have my friend's feedback saved.

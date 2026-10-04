@@ -1,0 +1,32 @@
+deadline-guardian/
+├── blocks/                  
+│   ├── block1.txt
+│   ├── block2.txt
+│   ├── block3.txt
+│   └── block4.txt
+│
+├── app/                     # core logic (Block 1)
+│   ├── __init__.py
+│   ├── ingest.py            # pdf / pptx / txt / md -> text + source metadata
+│   ├── rag.py               # chunking, embeddings, in-memory store, retrieve()
+│   ├── llm.py               # OpenAI-compatible client (Gemma / Ollama via env vars)
+│   └── prompts.py           # ASK, CONDENSE, QUIZ, TRIAGE prompts
+│
+├── static/                  # frontend (Block 2)
+│   ├── index.html
+│   ├── app.js
+│   └── style.css
+│
+├── samples/                 # a few real notes/PPTs/PDFs for testing (keep small)
+│
+├── docs/                    # for the write-up (Block 4)
+│   ├── notes.txt            # friend's feedback, bugs hit, things to mention
+│   └── screenshots/
+│
+├── main.py                  # FastAPI app (Block 2)
+├── cli.py                   # terminal testing tool (Block 1)
+├── requirements.txt
+├── render.yaml              # Render deploy config (Block 3)
+├── .env.example             # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL (no real keys)
+├── .gitignore               # .env, __pycache__, .venv, model cache
+└── README.md

@@ -1,0 +1,21 @@
+PROJECT: deadline-guardian
+Last-minute exam-prep study buddy. User uploads notes; we chunk + embed them (RAG); retrieved context + query go to an open-weights LLM (Gemma). For the DEV Hacktoberfest "Build for a Friend" challenge. Deadline: Mon Oct 5, 12:29 PM IST. Keep everything SIMPLE.
+
+BLOCK 1 GOAL: working text-only RAG core, tested from a CLI. No UI, no images yet.
+
+STACK (fixed):
+- Python 3.11, folders already exist: app/ (ingest.py, rag.py, llm.py, prompts.py), cli.py, samples/
+- Parsing: pypdf (PDF text), python-pptx (slide text), plain .txt/.md
+- Embeddings: fastembed, BAAI/bge-small-en-v1.5, lazy-loaded
+- Vector store: in-memory numpy, cosine similarity, one store per session id
+- LLM: openai package against an OpenAI-compatible endpoint, configured ONLY by env vars LLM_BASE_URL, LLM_API_KEY, LLM_MODEL (Gemma via Google AI Studio; must also work unchanged with Ollama at http://localhost:11434/v1)
+
+TASKS:
+1. ingest.py: extract_text(path) -> list of {text, source, page} for pdf (per page), pptx (per slide), txt, md. Clear error for unsupported/unreadable files.
+2. rag.py: chunk (~500 tokens, 50 overlap, keep source+page), embed, add_to_store(session_id, chunks), retrieve(session_id, query, k=6). Cap chunks per session.
+3. llm.py: chat(system, user) with timeout and readable errors (bad key, rate limit, timeout).
+4. prompts.py: ASK (cite like [file p.3]), CONDENSE (cheat sheet), QUIZ (JSON: question, options, answer, explanation), TRIAGE (given hours_left, prioritized plan). All must use ONLY the given context and say so if it is insufficient.
+5. cli.py: ingest <folder>, ask "...", condense [topic], quiz [topic] --n 5, triage --hours 6.
+6. requirements.txt (pinned, minimal), .env.example, .gitignore (.env, __pycache__, .venv, .cache/), short README.
+
+DONE WHEN: CLI gives sensible cited answers on 2-3 real text/PDF/PPTX files. Commit.

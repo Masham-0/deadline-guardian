@@ -1,0 +1,19 @@
+PROJECT: deadline-guardian (Block 1 core works via CLI)
+
+BLOCK 2 GOAL: FastAPI backend + simple frontend.
+
+BACKEND (main.py):
+- POST /upload (multipart, max 10 files, 10MB each, allowed types only) -> ingest -> store under a session id
+- POST /ask {session_id, query}; /condense {session_id, topic?}; /quiz {session_id, topic?, n}; /triage {session_id, hours_left}
+- GET /health; GET /config (returns LLM_MODEL name)
+- Responses: {answer, sources:[{file, page, snippet}]}; quiz returns parsed JSON (strip code fences, retry once if invalid)
+- Sessions in memory with a 2-hour TTL. Friendly JSON errors when the LLM fails.
+
+FRONTEND (static/index.html, app.js, style.css; no framework, no build step):
+- Drag-and-drop upload with file list
+- Four tabs: Ask, Cheat Sheet, Quiz (flashcard reveal), Panic Plan (hours-left input)
+- Sources under each answer, loading states, markdown rendering (marked via CDN)
+- Mobile-friendly (my friend will use a phone)
+- Footer: "Powered by <model> (open weights)" from /config
+
+DONE WHEN: uvicorn main:app --reload works and all four tabs work in the browser on real notes. Commit.
