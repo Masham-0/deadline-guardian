@@ -4,6 +4,16 @@ import pickle
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import numpy as np
+from dotenv import load_dotenv
+
+# Load environment variables (.env)
+load_dotenv()
+
+# Ensure Hugging Face token is active in environment if present
+hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = hf_token
 
 # Ensure fastembed cache directory is set to project-local .cache/fastembed if not provided
 if "FASTEMBED_CACHE_DIR" not in os.environ:

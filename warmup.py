@@ -1,5 +1,15 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables (.env)
+load_dotenv()
+
+# Ensure Hugging Face token is active in environment if present
+hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
+    os.environ["HUGGINGFACE_HUB_TOKEN"] = hf_token
 
 # Set cache dir to project-local .cache/fastembed
 cache_dir = str(Path(__file__).parent / ".cache" / "fastembed")
