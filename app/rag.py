@@ -1,8 +1,13 @@
+import os
 import time
 import pickle
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import numpy as np
+
+# Ensure fastembed cache directory is set to project-local .cache/fastembed if not provided
+if "FASTEMBED_CACHE_DIR" not in os.environ:
+    os.environ["FASTEMBED_CACHE_DIR"] = str(Path(__file__).parent.parent / ".cache" / "fastembed")
 
 try:
     from fastembed import TextEmbedding
@@ -26,8 +31,9 @@ def get_embedding_model() -> Any:
     if _EMBED_MODEL is None:
         if TextEmbedding is None:
             raise ImportError("fastembed is required. Run `pip install fastembed`.")
-        print(f"Loading embedding model ({EMBEDDING_MODEL_NAME})...")
-        _EMBED_MODEL = TextEmbedding(model_name=EMBEDDING_MODEL_NAME)
+        cache_dir = os.environ.get("FASTEMBED_CACHE_DIR")
+        print(f"Loading embedding model ({EMBEDDING_MODEL_NAME}) from cache_dir={cache_dir}...")
+        _EMBED_MODEL = TextEmbedding(model_name=EMBEDDING_MODEL_NAME, cache_dir=cache_dir)
     return _EMBED_MODEL
 
 

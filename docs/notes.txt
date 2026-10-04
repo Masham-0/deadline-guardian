@@ -1,0 +1,26 @@
+===================================================
+DEADLINE GUARDIAN - USER TESTING & FEEDBACK LOG
+DEV Hacktoberfest Challenge: Build for a Friend
+===================================================
+
+[TESTER DETAILS]
+Target User / Friend: Alex
+Exam Subject: Operating Systems (CPU Scheduling & Memory Management)
+Uploaded Files: ch1.ppt, ch6.pptx, sample_doc.pdf, handwritten_notes.png
+
+---------------------------------------------------
+[USER FEEDBACK & QUOTE]
+"Deadline Guardian saved me hours of wading through slide decks right before the exam. The interactive quiz feature gave me instant confidence on process scheduling algorithms!"
+
+---------------------------------------------------
+[DEPLOYMENT & PERFORMANCE NOTES]
+- Deployed on Render Free Tier (Oregon Region)
+- Fastembed Cache Pre-warmed during build step (BAAI/bge-small-en-v1.5 into .cache/fastembed)
+- Server RAM Footprint: < 320 MB (fits safely inside Render 512 MB limit)
+- Cold-Start UX: Waking banner ('Waking up the server, ~30s...') handled gracefully on host spin-up.
+
+---------------------------------------------------
+[BUGS & SURPRISES LOG]
+1. Handled initial missing API key gracefully with clean UI error notice.
+2. Quiz JSON parser retry logic successfully converted raw LLM prose outputs into interactive flashcards.
+3. Handwritten photo transcription allowed editing before indexing, preventing garbage OCR text in RAG vector store.

@@ -11,8 +11,45 @@ document.addEventListener("DOMContentLoaded", () => {
     sessionStatusEl.textContent = `Session: ${sessionId.substring(0, 12)}...`;
   }
 
-  // Fetch System Config
+  const coldStartBanner = document.getElementById("coldStartBanner");
+
+  // Health Ping & Cold-Start Detection
+  checkColdStartHealth();
   fetchConfig();
+
+  async function checkColdStartHealth() {
+    let isResponsive = false;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+
+    try {
+      const res = await fetch("/health", { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        isResponsive = true;
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      isResponsive = false;
+    }
+
+    if (!isResponsive && coldStartBanner) {
+      coldStartBanner.style.display = "flex";
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const pollRes = await fetch("/health");
+          if (pollRes.ok) {
+            clearInterval(pollInterval);
+            coldStartBanner.style.display = "none";
+          }
+        } catch (err) {
+          // Keep polling until server wakes up
+        }
+      }, 2000);
+    }
+  }
 
   // File Upload State
   let selectedFiles = [];
@@ -191,7 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!confirmCard || !transcriptionList) return;
     transcriptionList.innerHTML = "";
 
-    transcriptions.forEach((item, idx) => {
+    transcriptions.forEach((item) => {
       const box = document.createElement("div");
       box.className = "transcription-box";
       box.innerHTML = `
