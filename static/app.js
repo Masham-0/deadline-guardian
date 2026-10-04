@@ -19,16 +19,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function checkColdStartHealth() {
     let isResponsive = false;
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
 
     try {
       const res = await fetch("/health", { signal: controller.signal });
       clearTimeout(timeoutId);
-      if (res.ok) {
-        isResponsive = true;
-      }
+      if (res.ok) isResponsive = true;
     } catch (e) {
       clearTimeout(timeoutId);
       isResponsive = false;
@@ -326,75 +323,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Tab 2: Condense (Cheat Sheet)
-  const condenseBtn = document.getElementById("condenseBtn");
-  const condenseTopic = document.getElementById("condenseTopic");
-  const condenseResult = document.getElementById("condenseResult");
-  const condenseContent = document.getElementById("condenseContent");
-  const condenseSources = document.getElementById("condenseSources");
-
-  condenseBtn.addEventListener("click", async () => {
-    const topic = condenseTopic.value.trim();
-
-    setLoading(condenseBtn, true, "Generating Cheat Sheet...");
-    condenseResult.style.display = "none";
-
-    try {
-      const res = await fetch("/condense", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, topic: topic }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Request failed");
-
-      condenseContent.innerHTML = renderMarkdown(data.answer);
-      renderSources(condenseSources, data.sources);
-      condenseResult.style.display = "block";
-    } catch (err) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(condenseBtn, false, "Generate Cheat Sheet");
-    }
-  });
-
-  // Tab 3: Interactive Quiz
-  const quizBtn = document.getElementById("quizBtn");
-  const quizTopic = document.getElementById("quizTopic");
-  const quizN = document.getElementById("quizN");
-  const quizResult = document.getElementById("quizResult");
-  const quizContent = document.getElementById("quizContent");
-  const quizSources = document.getElementById("quizSources");
-
-  quizBtn.addEventListener("click", async () => {
-    const topic = quizTopic.value.trim();
-    const n = parseInt(quizN.value) || 5;
-
-    setLoading(quizBtn, true, "Creating Quiz...");
-    quizResult.style.display = "none";
-
-    try {
-      const res = await fetch("/quiz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, topic: topic, n: n }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Request failed");
-
-      renderQuizCards(quizContent, data.quiz);
-      renderSources(quizSources, data.sources);
-      quizResult.style.display = "block";
-    } catch (err) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(quizBtn, false, "Generate Quiz Flashcards");
-    }
-  });
-
-  // Tab 4: Panic Plan (Triage)
+  // Tab 2: Panic Plan (Triage)
   const triageBtn = document.getElementById("triageBtn");
   const triageHours = document.getElementById("triageHours");
   const triageResult = document.getElementById("triageResult");
@@ -494,64 +423,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     html += `</div>`;
     container.innerHTML = html;
-  }
-
-  function renderQuizCards(container, quizList) {
-    container.innerHTML = "";
-    if (!quizList || quizList.length === 0) {
-      container.innerHTML = "<p>No quiz questions generated.</p>";
-      return;
-    }
-
-    quizList.forEach((q, idx) => {
-      const card = document.createElement("div");
-      card.className = "quiz-card";
-
-      let optionsHtml = "";
-      const options = q.options || [];
-
-      options.forEach((optStr) => {
-        const optionLetter = optStr.trim().charAt(0).toUpperCase();
-        optionsHtml += `
-          <button class="quiz-opt-btn" data-letter="${optionLetter}">
-            ${escapeHtml(optStr)}
-          </button>
-        `;
-      });
-
-      card.innerHTML = `
-        <div class="quiz-question">Q${idx + 1}: ${escapeHtml(q.question || "")}</div>
-        <div class="quiz-options">${optionsHtml}</div>
-        <div class="quiz-explanation" id="exp_${idx}">
-          <strong>Explanation:</strong> ${escapeHtml(q.explanation || "")}
-        </div>
-      `;
-
-      container.appendChild(card);
-
-      const optBtns = card.querySelectorAll(".quiz-opt-btn");
-      const expEl = card.querySelector(".quiz-explanation");
-      const correctAnswer = (q.answer || "A").trim().toUpperCase();
-
-      optBtns.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          optBtns.forEach((b) => b.disabled = true);
-          const chosenLetter = btn.getAttribute("data-letter");
-
-          if (chosenLetter === correctAnswer || optBtns.length === 1) {
-            btn.classList.add("correct");
-          } else {
-            btn.classList.add("incorrect");
-            optBtns.forEach((b) => {
-              if (b.getAttribute("data-letter") === correctAnswer) {
-                b.classList.add("correct");
-              }
-            });
-          }
-          expEl.style.display = "block";
-        });
-      });
-    });
   }
 
   function escapeHtml(str) {

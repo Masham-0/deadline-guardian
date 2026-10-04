@@ -53,63 +53,6 @@ def handle_ask(args):
     print("--------------------------------\n")
 
 
-def handle_condense(args):
-    load_store(STORE_FILE)
-    search_query = args.topic if args.topic else "core concepts summary"
-    chunks = retrieve(args.session, search_query, k=args.k)
-
-    if not chunks:
-        print(f"No stored material found for session '{args.session}'. Run `python cli.py ingest <folder>` first.")
-        return
-
-    sys_prompt, user_prompt = prompts.build_condense_prompt(args.topic, chunks)
-    print("\n--- Cheat Sheet ---")
-    response = chat(sys_prompt, user_prompt)
-    print(response)
-    print("-------------------\n")
-
-
-def handle_quiz(args):
-    load_store(STORE_FILE)
-    search_query = args.topic if args.topic else "key definitions exam questions"
-    chunks = retrieve(args.session, search_query, k=args.k)
-
-    if not chunks:
-        print(f"No stored material found for session '{args.session}'. Run `python cli.py ingest <folder>` first.")
-        return
-
-    sys_prompt, user_prompt = prompts.build_quiz_prompt(args.topic, chunks, n_questions=args.n)
-    print(f"\n--- Generating Quiz ({args.n} Questions) ---")
-    raw_response = chat(sys_prompt, user_prompt)
-
-    # Clean potential markdown wrapping if returned by LLM
-    cleaned = raw_response.strip()
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:]
-    if cleaned.startswith("```"):
-        cleaned = cleaned[3:]
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-    cleaned = cleaned.strip()
-
-    try:
-        quiz_data = json.loads(cleaned)
-        if isinstance(quiz_data, list):
-            for i, q in enumerate(quiz_data, start=1):
-                print(f"\nQ{i}: {q.get('question')}")
-                for opt in q.get('options', []):
-                    print(f"   {opt}")
-                print(f"Answer: {q.get('answer')}")
-                print(f"Explanation: {q.get('explanation')}")
-        else:
-            print(raw_response)
-    except Exception:
-        # Fallback to raw text output if JSON parsing fails
-        print(raw_response)
-
-    print("-------------------------------------------\n")
-
-
 def handle_triage(args):
     load_store(STORE_FILE)
     chunks = retrieve(args.session, "syllabus exam core topics overview important", k=args.k)
@@ -144,21 +87,6 @@ def main():
     parser_ask.add_argument("--session", default="default", help="Session ID")
     parser_ask.add_argument("--k", type=int, default=6, help="Number of retrieved context chunks")
     parser_ask.set_defaults(func=handle_ask)
-
-    # Condense command
-    parser_condense = subparsers.add_parser("condense", help="Generate a cheat sheet summary for a topic")
-    parser_condense.add_argument("topic", nargs="?", default="", help="Topic to summarize (optional)")
-    parser_condense.add_argument("--session", default="default", help="Session ID")
-    parser_condense.add_argument("--k", type=int, default=8, help="Number of retrieved context chunks")
-    parser_condense.set_defaults(func=handle_condense)
-
-    # Quiz command
-    parser_quiz = subparsers.add_parser("quiz", help="Generate quiz questions on a topic")
-    parser_quiz.add_argument("topic", nargs="?", default="", help="Topic for quiz (optional)")
-    parser_quiz.add_argument("--n", type=int, default=5, help="Number of questions")
-    parser_quiz.add_argument("--session", default="default", help="Session ID")
-    parser_quiz.add_argument("--k", type=int, default=8, help="Number of retrieved context chunks")
-    parser_quiz.set_defaults(func=handle_quiz)
 
     # Triage command
     parser_triage = subparsers.add_parser("triage", help="Generate a prioritized study timetable")

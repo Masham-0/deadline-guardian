@@ -80,16 +80,10 @@
       </div>
     </section>
 
-    <!-- Navigation Tabs -->
+    <!-- Navigation Tabs (Ask Anything & Panic Plan) -->
     <nav class="tabs-nav">
       <button class="tab-btn active" data-tab="askTab">
         <span>❓ Ask Anything</span>
-      </button>
-      <button class="tab-btn" data-tab="condenseTab">
-        <span>📝 Cheat Sheet</span>
-      </button>
-      <button class="tab-btn" data-tab="quizTab">
-        <span>🎯 Interactive Quiz</span>
       </button>
       <button class="tab-btn" data-tab="triageTab">
         <span>⏱️ Panic Plan</span>
@@ -101,7 +95,7 @@
       <div class="panel-card">
         <div class="form-group">
           <label class="form-label" for="askInput">Ask a Question from your uploaded notes:</label>
-          <textarea class="form-input" id="askInput" placeholder="e.g. What are the key process states in CPU scheduling?"></textarea>
+          <textarea class="form-input" id="askInput" placeholder="e.g. Explain Round Robin CPU scheduling in detail with examples and formulas."></textarea>
         </div>
         <button class="btn-primary" id="askBtn">
           <span>Get Answer</span>
@@ -114,49 +108,7 @@
       </div>
     </div>
 
-    <!-- Tab 2: Cheat Sheet (Condense) -->
-    <div class="tab-panel" id="condenseTab">
-      <div class="panel-card">
-        <div class="form-group">
-          <label class="form-label" for="condenseTopic">Topic to Summarize (Optional):</label>
-          <input type="text" class="form-input" id="condenseTopic" placeholder="e.g. Memory Management & Paging">
-        </div>
-        <button class="btn-primary" id="condenseBtn">
-          <span>Generate Cheat Sheet</span>
-        </button>
-
-        <div class="result-card" id="condenseResult" style="display: none;">
-          <div id="condenseContent"></div>
-          <div class="sources-container" id="condenseSources"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 3: Interactive Quiz -->
-    <div class="tab-panel" id="quizTab">
-      <div class="panel-card">
-        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1rem;">
-          <div class="form-group">
-            <label class="form-label" for="quizTopic">Quiz Topic (Optional):</label>
-            <input type="text" class="form-input" id="quizTopic" placeholder="e.g. Process Synchronization">
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="quizN">Questions:</label>
-            <input type="number" class="form-input" id="quizN" value="5" min="1" max="10">
-          </div>
-        </div>
-        <button class="btn-primary" id="quizBtn">
-          <span>Generate Quiz Flashcards</span>
-        </button>
-
-        <div id="quizResult" style="display: none;">
-          <div class="quiz-container" id="quizContent"></div>
-          <div class="sources-container" id="quizSources" style="margin-top: 1.5rem;"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tab 4: Panic Plan (Triage) -->
+    <!-- Tab 2: Panic Plan (Triage) -->
     <div class="tab-panel" id="triageTab">
       <div class="panel-card">
         <div class="form-group">

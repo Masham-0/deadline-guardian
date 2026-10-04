@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -37,17 +37,6 @@ _UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
 class AskRequest(BaseModel):
     session_id: str
     query: str
-
-
-class CondenseRequest(BaseModel):
-    session_id: str
-    topic: Optional[str] = ""
-
-
-class QuizRequest(BaseModel):
-    session_id: str
-    topic: Optional[str] = ""
-    n: Optional[int] = Field(default=5, ge=1, le=10)
 
 
 class TriageRequest(BaseModel):
@@ -239,77 +228,6 @@ def ask_question(req: AskRequest):
     sources = format_sources(chunks)
 
     return {"answer": answer, "sources": sources}
-
-
-@app.post("/condense")
-def condense_topic(req: CondenseRequest):
-    search_topic = req.topic if req.topic and req.topic.strip() else "main concepts core definitions summary"
-    chunks = retrieve(req.session_id, search_topic, k=8)
-
-    if not chunks:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No context found for session '{req.session_id}'. Please upload study materials first."
-        )
-
-    sys_prompt, user_prompt = prompts.build_condense_prompt(req.topic or "", chunks)
-    answer = chat(sys_prompt, user_prompt)
-    sources = format_sources(chunks)
-
-    return {"answer": answer, "sources": sources}
-
-
-def parse_quiz_json(raw_response: str) -> Optional[List[Dict[str, Any]]]:
-    """Helper to strip code blocks and parse quiz JSON."""
-    cleaned = raw_response.strip()
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:]
-    if cleaned.startswith("```"):
-        cleaned = cleaned[3:]
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3]
-    cleaned = cleaned.strip()
-
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, list):
-            return data
-    except Exception:
-        pass
-    return None
-
-
-@app.post("/quiz")
-def generate_quiz(req: QuizRequest):
-    search_topic = req.topic if req.topic and req.topic.strip() else "key definitions multiple choice questions"
-    chunks = retrieve(req.session_id, search_topic, k=8)
-
-    if not chunks:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No context found for session '{req.session_id}'. Please upload study materials first."
-        )
-
-    sys_prompt, user_prompt = prompts.build_quiz_prompt(req.topic or "", chunks, n_questions=req.n)
-    raw_answer = chat(sys_prompt, user_prompt)
-    parsed_quiz = parse_quiz_json(raw_answer)
-
-    # Retry once if initial JSON parse failed
-    if parsed_quiz is None:
-        retry_user_prompt = user_prompt + "\n\nIMPORTANT: Return STRICT RAW JSON ONLY. No markdown, no prose."
-        raw_answer = chat(sys_prompt, retry_user_prompt)
-        parsed_quiz = parse_quiz_json(raw_answer)
-
-    if parsed_quiz is None:
-        parsed_quiz = [{
-            "question": "Could not format quiz as JSON.",
-            "options": ["A) View raw answer"],
-            "answer": "A",
-            "explanation": raw_answer
-        }]
-
-    sources = format_sources(chunks)
-    return {"quiz": parsed_quiz, "sources": sources}
 
 
 @app.post("/triage")

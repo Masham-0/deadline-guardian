@@ -44,7 +44,8 @@ def chat(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.2
+            temperature=0.2,
+            max_tokens=2048
         )
 
         if response.choices and len(response.choices) > 0:
@@ -68,9 +69,6 @@ def chat(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
 def describe_image(image_bytes: bytes, mime_type: str = "image/jpeg", mode: str = "FULL", timeout: float = 60.0) -> str:
     """
     Send image bytes to vision-capable LLM model via OpenAI-compatible image_url format.
-    Modes:
-      FULL: Transcribe all text in image preserving structure.
-      FIGURES: Describe diagrams, charts, tables, or figures.
     """
     if OpenAI is None:
         raise ImportError("openai package is required. Run `pip install openai`.")
@@ -111,7 +109,8 @@ def describe_image(image_bytes: bytes, mime_type: str = "image/jpeg", mode: str 
                     ]
                 }
             ],
-            temperature=0.1
+            temperature=0.1,
+            max_tokens=2048
         )
 
         if response.choices and len(response.choices) > 0:
