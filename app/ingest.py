@@ -157,13 +157,14 @@ def extract_text(
                             rendered_bytes, mime = resize_image_if_needed(buf.getvalue())
 
                             ocr_text = describe_image(rendered_bytes, mime_type=mime, mode="FULL")
-                            results.append({
-                                "text": ocr_text,
-                                "source": source_name,
-                                "page": idx,
-                                "is_vision": True
-                            })
-                            continue
+                            if ocr_text and not ocr_text.startswith("[Vision Error]") and not ocr_text.startswith("[LLM Error]"):
+                                results.append({
+                                    "text": ocr_text,
+                                    "source": source_name,
+                                    "page": idx,
+                                    "is_vision": True
+                                })
+                                continue
                         except Exception as e:
                             print(f"[Warning] Failed vision OCR on {source_name} p.{idx}: {e}")
 
@@ -179,14 +180,15 @@ def extract_text(
                         rendered_bytes, mime = resize_image_if_needed(buf.getvalue())
 
                         fig_desc = describe_image(rendered_bytes, mime_type=mime, mode="FIGURES")
-                        combined = f"{text}\n\n[Diagram/Figure Description]:\n{fig_desc}".strip()
-                        results.append({
-                            "text": combined,
-                            "source": source_name,
-                            "page": idx,
-                            "is_vision": True
-                        })
-                        continue
+                        if fig_desc and not fig_desc.startswith("[Vision Error]") and not fig_desc.startswith("[LLM Error]"):
+                            combined = f"{text}\n\n[Diagram/Figure Description]:\n{fig_desc}".strip()
+                            results.append({
+                                "text": combined,
+                                "source": source_name,
+                                "page": idx,
+                                "is_vision": True
+                            })
+                            continue
                     except Exception as e:
                         print(f"[Warning] Failed vision figure description on {source_name} p.{idx}: {e}")
 
@@ -222,7 +224,8 @@ def extract_text(
                     try:
                         pic_bytes, mime = resize_image_if_needed(picture_blobs[0])
                         fig_desc = describe_image(pic_bytes, mime_type=mime, mode="FIGURES")
-                        text_content = f"{text_content}\n\n[Slide Diagram/Figure]:\n{fig_desc}".strip()
+                        if fig_desc and not fig_desc.startswith("[Vision Error]") and not fig_desc.startswith("[LLM Error]"):
+                            text_content = f"{text_content}\n\n[Slide Diagram/Figure]:\n{fig_desc}".strip()
                     except Exception as e:
                         print(f"[Warning] Failed figure vision on slide {idx}: {e}")
 

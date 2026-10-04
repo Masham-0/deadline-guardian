@@ -66,6 +66,45 @@ def chat(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
         return f"[LLM Error] Unexpected error while calling LLM: {str(e)}"
 
 
+def chat_stream(system_prompt: str, user_prompt: str, timeout: float = 60.0):
+    """
+    Stream response text tokens from OpenAI-compatible LLM endpoint.
+    Yields chunks of text as strings.
+    """
+    if OpenAI is None:
+        raise ImportError("openai package is required. Run `pip install openai`.")
+
+    base_url, api_key, model = get_llm_config()
+    effective_api_key = api_key if api_key else "ollama-or-local"
+
+    try:
+        client = OpenAI(
+            base_url=base_url,
+            api_key=effective_api_key,
+            timeout=timeout
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2,
+            max_tokens=2048,
+            stream=True
+        )
+
+        for chunk in response:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
+
+    except Exception as e:
+        yield f"\n\n[LLM Stream Error]: {str(e)}"
+
+
 def describe_image(image_bytes: bytes, mime_type: str = "image/jpeg", mode: str = "FULL", timeout: float = 60.0) -> str:
     """
     Send image bytes to vision-capable LLM model via OpenAI-compatible image_url format.
@@ -114,12 +153,12 @@ def describe_image(image_bytes: bytes, mime_type: str = "image/jpeg", mode: str 
         )
 
         if response.choices and len(response.choices) > 0:
-            return (response.choices[0].message.content or "").strip()
-        return "[Vision Error] No response returned from vision model."
+            res_text = (response.choices[0].message.content or "").strip()
+            if res_text.startswith("[Vision Error]") or res_text.startswith("[LLM Error]") or "may not support vision" in res_text:
+                return ""
+            return res_text
+        return ""
 
-    except openai.BadRequestError as e:
-        return f"[Vision Error] The model '{model}' may not support vision/image input: {e}"
-    except openai.AuthenticationError as e:
-        return f"[LLM Error] Authentication failed (401). Check LLM_API_KEY: {e}"
     except Exception as e:
-        return f"[Vision Error] Could not process image: {str(e)}"
+        print(f"[Vision Warning] Vision processing skipped: {e}")
+        return ""

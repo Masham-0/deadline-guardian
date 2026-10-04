@@ -1,31 +1,38 @@
-# Deadline Guardian 🎓⚡
+# deadline-guardian 🛡️⚡
 
-> **Last-minute exam-prep study buddy.**  
-> Built for the **DEV Hacktoberfest "Build for a Friend" Challenge**.  
-> Upload your notes (PDF, PPTX, TXT, MD, JPG, PNG, WEBP); we chunk & embed them (RAG using `fastembed`); retrieved context + queries go to an open-weights LLM (Gemma via Google AI Studio or Ollama). Features vision transcription for handwritten notes and diagrams, interactive quiz flashcards, cheat sheets, and deadline panic timetables!
+A last-minute study buddy. Upload your notes, slides, PDFs (and photos of handwritten pages), then ask questions, get a cheat sheet, or get a panic plan for the hours you have left.
 
----
+Built by **Mohammad Masham** for the **DEV Hacktoberfest Weekend Challenge** *"Build for a Friend"*.
 
-## ✨ Features
-
-- 📁 **Multi-Format Ingestion**: Upload PDFs (scanned & digital), PowerPoint decks (`.pptx`), text notes (`.txt`, `.md`), and photos of handwritten notes (`.jpg`, `.png`, `.webp`).
-- 👁️ **Vision & OCR**: Auto-detects scanned PDF pages and photos of handwritten notes using vision models. Provides an editable preview box before indexing.
-- 🔍 **Local FastEmbed RAG**: High-speed, in-memory vector retrieval using `BAAI/bge-small-en-v1.5` cosine similarity embeddings.
-- ❓ **Grounded Answers with Citations**: Answers questions strictly using uploaded notes with inline file & page citations (`[notes.pdf p.3]`).
-- 📝 **High-Yield Cheat Sheets**: Condenses complex course topics into quick revision bullet points.
-- 🎯 **Interactive Quiz Flashcards**: Generates multiple-choice quiz questions with instant option selection, visual answer feedback, and explanations.
-- ⏱️ **Deadline Panic Timetable**: Generates a prioritized study schedule based on hours left before the exam.
-- 🚀 **Render Free-Tier Ready**: Memory-optimized (< 350MB RAM footprint) with build-time model cache warming (`warmup.py`) and cold-start UX banners.
+- **Developer:** Mohammad Masham ([mohd.masham@gmail.com](mailto:mohd.masham@gmail.com))
+- **College:** Netaji Subhas University of Technology (NSUT)
+- **Live demo:** [https://deadline-guardian.onrender.com](https://deadline-guardian.onrender.com) *(free tier, may take ~30s to wake up)*
+- **Write-up:** [DEV Community Post](#)
 
 ---
 
-## 🚀 Local Setup & Execution
+## ⚡ What it does
+- **Ask** – Answers questions strictly from *your* uploaded notes with exact inline source citations (`[filename p.X]`).
+- **Cheat Sheet** – Condenses dense lecture notes and slides into a high-yield revision sheet.
+- **Panic Plan** – Tell it how many hours you have left before the exam; it auto-prioritizes topics and constructs an hour-by-hour study timetable.
+- **Multi-Format Support** – Reads PDFs (scanned & digital), PowerPoint decks (`.pptx`), text notes (`.txt`, `.md`), and photos/diagrams (`.jpg`, `.png`, `.webp`).
 
-### 1. Prerequisites
-- Python 3.11+
-- Virtual environment (`venv`)
+---
 
-### 2. Installation
+## 🧠 How it works
+1. **Multi-Format Ingestion**: Files are parsed into clean text. Scanned pages or photos undergo vision transcription if supported by the model API endpoint.
+2. **Paragraph-Aware Chunking**: Text is split into fine-grained 150-word paragraph-aware chunks with overlap to preserve conceptual context.
+3. **Local Vector Embeddings**: Chunks are embedded in-memory using `BAAI/bge-small-en-v1.5` cosine similarity embeddings (`fastembed`).
+4. **Targeted Vector Retrieval**: User queries execute cosine similarity search over session embeddings to retrieve top relevant contexts (`top-k`).
+5. **Grounded Synthesis & Streaming**: Retrieved contexts and query are streamed from an open-weights LLM model (Gemma) with LaTeX math rendering (`KaTeX`).
+
+App and retrieval run on FastAPI & Uvicorn (Render free tier friendly, < 350MB RAM). The LLM is called through an OpenAI-compatible API, so you can swap models by changing one env var, or run everything locally with Ollama.
+
+---
+
+## 🚀 Run locally
+
+### 1. Prerequisites & Environment Setup
 ```bash
 git clone https://github.com/your-username/deadline-guardian.git
 cd deadline-guardian
@@ -35,98 +42,80 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Environment Configuration
+### 2. Environment Variables
 Copy `.env.example` to `.env`:
 ```bash
 cp .env.example .env
 ```
 
-#### Option A: Google AI Studio (Recommended for Vision & Gemma)
+Edit your `.env` file:
 ```env
 LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-LLM_API_KEY=your_google_ai_studio_api_key
+LLM_API_KEY=your_google_ai_studio_or_openai_api_key
 LLM_MODEL=gemma-2-9b-it
 ```
 
-#### Option B: Local Ollama
-Ensure [Ollama](https://ollama.com) is running locally (`ollama run gemma:2b` or `ollama run llava` for vision):
-```env
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_API_KEY=ollama
-LLM_MODEL=gemma:2b
-```
-
-### 4. Running the Web Application
-Start the FastAPI server:
+### 3. Start the Local Server
 ```bash
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 
-### 5. Using the CLI
-You can also interact directly via the terminal:
+---
+
+### Environment variables
+| Name | Description | Example |
+|---|---|---|
+| `LLM_BASE_URL` | OpenAI-compatible API base URL | `https://generativelanguage.googleapis.com/v1beta/openai/` |
+| `LLM_API_KEY` | API authentication key | `your_api_key` |
+| `LLM_MODEL` | Gemma or open-weights model name | `gemma-2-9b-it` |
+| `HF_TOKEN` | Hugging Face token (optional) | `hf_...` |
+
+---
+
+### Fully local with Ollama
+To run 100% locally and offline without external API keys:
+
+1. Install [Ollama](https://ollama.com) and pull the model:
+   ```bash
+   ollama pull gemma:2b
+   ```
+
+2. Run the application with Ollama environment settings:
+   ```bash
+   LLM_BASE_URL=http://localhost:11434/v1 LLM_API_KEY=ollama LLM_MODEL=gemma:2b uvicorn main:app --reload
+   ```
+
+---
+
+## 💻 Terminal CLI Mode
+You can also run Deadline Guardian directly from the command line:
 ```bash
-# Ingest notes
-python cli.py ingest blocks/
+# Ingest notes from a directory
+python cli.py ingest samples/
 
-# Ask a question
-python cli.py ask "What is Block 1 goal?"
+# Ask questions directly
+python cli.py ask "Explain Peterson's Solution"
 
-# Generate cheat sheet
-python cli.py condense "RAG Core"
-
-# Generate quiz
-python cli.py quiz "RAG" --n 5
-
-# Generate panic schedule
+# Generate a 6-hour deadline panic timetable
 python cli.py triage --hours 6
 ```
 
 ---
 
-## 🌐 Deploying to Render Free Tier
-
-`deadline-guardian` includes a production-ready [`render.yaml`](file:///home/mash/Projects/deadline-guardian/render.yaml) manifest designed for Render's free tier (512MB RAM).
-
-### Deployment Steps:
-1. Push your repository to GitHub.
-2. Log in to [Render Dashboard](https://dashboard.render.com).
-3. Click **New +** -> **Blueprint**.
-4. Connect your GitHub repository. Render will automatically detect `render.yaml`.
-5. Under Environment Variables in the Render dashboard, set:
-   - `LLM_API_KEY`: Your production API key.
-   - `LLM_BASE_URL`: `https://generativelanguage.googleapis.com/v1beta/openai/`
-   - `LLM_MODEL`: `gemma-2-9b-it`
-6. Click **Apply**.
-
-Render will run `pip install -r requirements.txt && python warmup.py` to pre-cache the embedding model during build time, ensuring fast runtime response.
+## ⚠️ Limitations
+- Sessions are stored in-memory and reset after ~2 hours of inactivity or a server restart.
+- Handwriting and diagram reading require a vision-capable LLM model endpoint.
+- Free hosting (Render) sleeps when idle (~30s cold start).
 
 ---
 
-## 🛠️ Project Architecture
-
-```
-deadline-guardian/
-├── app/
-│   ├── ingest.py     # PDF, PPTX, TXT, MD & Vision Image extraction
-│   ├── llm.py        # OpenAI-compatible API client & describe_image vision
-│   ├── prompts.py    # Grounded prompts for Ask, Condense, Quiz, Triage
-│   └── rag.py        # FastEmbed model, vector store & session TTL cleanup
-├── static/
-│   ├── index.html    # Mobile-friendly UI with drag-and-drop & tabs
-│   ├── style.css     # Glassmorphic dark design system
-│   └── app.js        # Session state, progress polling & interactive quiz engine
-├── blocks/           # Project roadmap specifications
-├── docs/
-│   └── notes.txt     # User testing feedback & deployment logs
-├── cli.py            # CLI entry point
-├── main.py           # FastAPI web server & endpoints
-├── render.yaml       # Render deployment manifest
-├── warmup.py         # Build-time embedding cache warm-up script
-└── requirements.txt  # Pinned Python dependencies
-```
+## 👤 Author
+- **Mohammad Masham** ([mohd.masham@gmail.com](mailto:mohd.masham@gmail.com))
+- **College:** Netaji Subhas University of Technology (NSUT)
+- Created for **DEV Hacktoberfest Weekend Challenge 2026** *"Build for a Friend"*.
 
 ---
 
 ## 📄 License
-MIT License. Built for the DEV Hacktoberfest "Build for a Friend" challenge.
+[MIT License](LICENSE)

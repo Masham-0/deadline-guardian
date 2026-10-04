@@ -4,12 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Deadline Guardian - Exam Prep Study Buddy</title>
-  <!-- Google Fonts -->
+  <!-- Google Fonts: Space Grotesk & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
   <!-- Marked.js CDN for Markdown Parsing -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- KaTeX CDN for LaTeX Math Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="shortcut icon" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -25,6 +31,7 @@
       <div class="session-badge">
         <span class="status-dot"></span>
         <span id="sessionStatus">Session: Active</span>
+        <button id="clearNotesBtn" title="Clear all indexed notes for this session" style="margin-left: 10px; background: #ff4757; color: #fff; border: 2px solid #000; padding: 2px 8px; font-weight: bold; cursor: pointer; border-radius: 4px; font-size: 0.75rem;">Reset Notes 🗑️</button>
       </div>
     </div>
   </header>
@@ -49,12 +56,49 @@
 
       <div class="file-list" id="fileList"></div>
 
-      <!-- Upload Progress Bar -->
-      <div id="uploadProgress" class="progress-bar-container" style="display: none; margin-top: 1rem;">
-        <div id="progressText" class="progress-text">Reading page 1...</div>
-        <div class="progress-bar-track">
-          <div id="progressBar" class="progress-bar-fill"></div>
+      <!-- Upload Pipeline Loader -->
+      <div id="uploadPipelineLoader" class="upload-pipeline-loader" style="display: none;">
+        <div class="upload-pipeline-header">
+          <div class="upload-pipeline-title">📤 INGESTION PIPELINE</div>
+          <div class="upload-pipeline-sub" id="uploadPipelineSub">Preparing files for processing...</div>
         </div>
+        <div class="upload-stages-row">
+          <div class="upload-stage-node" id="uploadStage1">
+            <div class="stage-icon">1</div>
+            <div class="stage-info">
+              <div class="stage-name">VALIDATE</div>
+              <div class="stage-desc" id="uploadStageDesc1">Checking files</div>
+            </div>
+          </div>
+          <div class="stage-connector"></div>
+          <div class="upload-stage-node" id="uploadStage2">
+            <div class="stage-icon">2</div>
+            <div class="stage-info">
+              <div class="stage-name">EXTRACT</div>
+              <div class="stage-desc" id="uploadStageDesc2">Reading content</div>
+            </div>
+          </div>
+          <div class="stage-connector"></div>
+          <div class="upload-stage-node" id="uploadStage3">
+            <div class="stage-icon">3</div>
+            <div class="stage-info">
+              <div class="stage-name">CHUNK</div>
+              <div class="stage-desc" id="uploadStageDesc3">Splitting text</div>
+            </div>
+          </div>
+          <div class="stage-connector"></div>
+          <div class="upload-stage-node" id="uploadStage4">
+            <div class="stage-icon">4</div>
+            <div class="stage-info">
+              <div class="stage-name">INDEX</div>
+              <div class="stage-desc" id="uploadStageDesc4">Vector store</div>
+            </div>
+          </div>
+        </div>
+        <div class="upload-progress-track">
+          <div id="uploadPipelineBar" class="upload-progress-fill" style="width: 0%;"></div>
+        </div>
+        <div class="upload-pipeline-log" id="uploadPipelineLog"></div>
       </div>
 
       <div class="upload-actions">
@@ -94,12 +138,56 @@
     <div class="tab-panel active" id="askTab">
       <div class="panel-card">
         <div class="form-group">
-          <label class="form-label" for="askInput">Ask a Question from your uploaded notes:</label>
+          <label class="form-label" for="askInput">ASK A QUESTION FROM YOUR NOTES:</label>
           <textarea class="form-input" id="askInput" placeholder="e.g. Explain Round Robin CPU scheduling in detail with examples and formulas."></textarea>
         </div>
         <button class="btn-primary" id="askBtn">
-          <span>Get Answer</span>
+          <span>GET ANSWER ↗</span>
         </button>
+
+        <!-- Compact Detailed RAG Pipeline Loader -->
+        <div id="askRagLoader" class="rag-pipeline-loader" style="display: none;">
+          <div class="rag-header">
+            <div class="rag-title">⚙️ RAG PIPELINE IN WORK...</div>
+            <div class="rag-subtitle" id="askRagSub">Processing query & searching relevant chunks...</div>
+          </div>
+          <div class="rag-stages-row">
+            <div class="rag-stage-node" id="askStage1">
+              <div class="stage-icon">1</div>
+              <div class="stage-info">
+                <div class="stage-name">UNDERSTAND</div>
+                <div class="stage-desc">Extracting concepts</div>
+              </div>
+            </div>
+            <div class="stage-connector"></div>
+            <div class="rag-stage-node" id="askStage2">
+              <div class="stage-icon">2</div>
+              <div class="stage-info">
+                <div class="stage-name">RETRIEVE</div>
+                <div class="stage-desc">Vector chunk search</div>
+              </div>
+            </div>
+            <div class="stage-connector"></div>
+            <div class="rag-stage-node" id="askStage3">
+              <div class="stage-icon">3</div>
+              <div class="stage-info">
+                <div class="stage-name">GENERATE</div>
+                <div class="stage-desc">LLM synthesis</div>
+              </div>
+            </div>
+            <div class="stage-connector"></div>
+            <div class="rag-stage-node" id="askStage4">
+              <div class="stage-icon">4</div>
+              <div class="stage-info">
+                <div class="stage-name">FINALISE</div>
+                <div class="stage-desc">Formatting sources</div>
+              </div>
+            </div>
+          </div>
+          <div class="rag-progress-track">
+            <div id="askRagBar" class="rag-progress-fill" style="width: 25%;"></div>
+          </div>
+        </div>
 
         <div class="result-card" id="askResult" style="display: none;">
           <div id="askContent"></div>
@@ -112,15 +200,59 @@
     <div class="tab-panel" id="triageTab">
       <div class="panel-card">
         <div class="form-group">
-          <label class="form-label" for="triageHours">Hours Remaining Before Exam:</label>
+          <label class="form-label" for="triageHours">HOURS REMAINING BEFORE EXAM:</label>
           <input type="number" class="form-input" id="triageHours" value="6" min="0.5" max="72" step="0.5">
-          <p style="font-size: 0.8rem; color: var(--accent-cyan); margin-top: 0.4rem;">
-            💡 <strong>Pro Tip:</strong> Uploading your Syllabus (`syllabus.png`/`.pdf`) or Past Exam Papers (`pyq.pdf`/`exam.txt`) enables AI-driven exam weightage priority mining!
+          <p style="font-size: 0.82rem; color: var(--forest-dark); font-weight: 600; margin-top: 0.5rem; background: var(--sage-light); padding: 0.4rem 0.6rem; border: 2px solid var(--border-black); display: inline-block;">
+            💡 <strong>PRO TIP:</strong> Uploading your Syllabus (`syllabus.png`/`.pdf`) or Past Exam Papers (`pyq.pdf`/`exam.txt`) enables weightage priority mining!
           </p>
         </div>
         <button class="btn-primary" id="triageBtn">
-          <span>Build Panic Timetable</span>
+          <span>BUILD PANIC TIMETABLE ↗</span>
         </button>
+
+        <!-- Compact Detailed RAG Pipeline Loader -->
+        <div id="triageRagLoader" class="rag-pipeline-loader" style="display: none;">
+          <div class="rag-header">
+            <div class="rag-title">⏱️ TRIAGE RAG PIPELINE IN WORK...</div>
+            <div class="rag-subtitle" id="triageRagSub">Mining syllabus priorities & drafting schedule...</div>
+          </div>
+          <div class="rag-stages-row">
+            <div class="rag-stage-node" id="triageStage1">
+              <div class="stage-icon">1</div>
+              <div class="stage-info">
+                <div class="stage-name">UNDERSTAND</div>
+                <div class="stage-desc">Parsing exam hours</div>
+              </div>
+            </div>
+            <div class="stage-connector"></div>
+            <div class="rag-stage-node" id="triageStage2">
+              <div class="stage-icon">2</div>
+              <div class="stage-info">
+                <div class="stage-name">RETRIEVE</div>
+                <div class="stage-desc">Sweep syllabus/PYQ</div>
+              </div>
+            </div>
+            <div class="stage-connector"></div>
+            <div class="rag-stage-node" id="triageStage3">
+              <div class="stage-icon">3</div>
+              <div class="stage-info">
+                <div class="stage-name">GENERATE</div>
+                <div class="stage-desc">Matrix & Timetable</div>
+              </div>
+            </div>
+            <div class="stage-connector"></div>
+            <div class="rag-stage-node" id="triageStage4">
+              <div class="stage-icon">4</div>
+              <div class="stage-info">
+                <div class="stage-name">FINALISE</div>
+                <div class="stage-desc">Deep-dive Cheats</div>
+              </div>
+            </div>
+          </div>
+          <div class="rag-progress-track">
+            <div id="triageRagBar" class="rag-progress-fill" style="width: 25%;"></div>
+          </div>
+        </div>
 
         <div class="result-card" id="triageResult" style="display: none;">
           <div id="triageContent"></div>
@@ -133,7 +265,22 @@
 
   <!-- Footer -->
   <footer class="app-footer">
-    <div id="footerModelInfo">Powered by Gemma (open weights)</div>
+    <div class="footer-container">
+      <div class="footer-brand-section">
+        <span class="footer-icon">🛡️⚡</span>
+        <span class="footer-title">Deadline Guardian</span>
+        <span class="footer-tag">Hacktoberfest 2026</span>
+      </div>
+      <div class="footer-meta-section">
+        <div id="footerModelInfo" class="footer-model-badge">Powered by Gemma (open weights)</div>
+        <div class="footer-creator-credits">
+          Created with ⚡ by <strong>Mohammad Masham</strong> • <span>Netaji Subhas University of Technology (NSUT)</span>
+        </div>
+        <div class="footer-contact-links">
+          <a href="mailto:mohd.masham@gmail.com" class="footer-email-link">✉️ mohd.masham@gmail.com</a>
+        </div>
+      </div>
+    </div>
   </footer>
 
   <script src="/static/app.js"></script>

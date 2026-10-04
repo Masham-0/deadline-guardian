@@ -57,8 +57,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const fileList = document.getElementById("fileList");
   const uploadBtn = document.getElementById("uploadBtn");
   const uploadNotice = document.getElementById("uploadNotice");
-  const uploadProgress = document.getElementById("uploadProgress");
-  const progressText = document.getElementById("progressText");
+  const uploadPipelineLoader = document.getElementById("uploadPipelineLoader");
+  const uploadPipelineSub = document.getElementById("uploadPipelineSub");
+  const uploadPipelineBar = document.getElementById("uploadPipelineBar");
+  const uploadPipelineLog = document.getElementById("uploadPipelineLog");
 
   const confirmCard = document.getElementById("transcriptionConfirmCard");
   const transcriptionList = document.getElementById("transcriptionList");
@@ -145,15 +147,70 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadBtn.disabled = selectedFiles.length === 0;
   }
 
+  let isUploadPolling = false;
+  let lastLoggedMsg = "";
+
+  function updateUploadStage(stageNum, subText, percent, logMsg) {
+    if (uploadPipelineLoader) uploadPipelineLoader.style.display = "block";
+    if (uploadPipelineSub) uploadPipelineSub.textContent = subText;
+    if (uploadPipelineBar) uploadPipelineBar.style.width = `${percent}%`;
+
+    for (let i = 1; i <= 4; i++) {
+      const node = document.getElementById(`uploadStage${i}`);
+      if (!node) continue;
+      node.classList.remove("completed", "active", "upcoming", "error-state");
+      if (i < stageNum) node.classList.add("completed");
+      else if (i === stageNum) node.classList.add("active");
+      else node.classList.add("upcoming");
+    }
+
+    if (logMsg && uploadPipelineLog && logMsg !== lastLoggedMsg) {
+      lastLoggedMsg = logMsg;
+      const entry = document.createElement("div");
+      entry.className = "upload-log-entry";
+      entry.textContent = `▸ ${logMsg}`;
+      uploadPipelineLog.appendChild(entry);
+      uploadPipelineLog.scrollTop = uploadPipelineLog.scrollHeight;
+    }
+  }
+
   function startStatusPolling() {
-    if (uploadProgress) uploadProgress.style.display = "block";
+    isUploadPolling = true;
+    lastLoggedMsg = "";
+    if (uploadPipelineLoader) uploadPipelineLoader.style.display = "block";
+    if (uploadPipelineLog) uploadPipelineLog.innerHTML = "";
+    updateUploadStage(1, "Validating & preparing files...", 10, "Starting upload pipeline...");
+
     statusPollTimer = setInterval(async () => {
+      if (!isUploadPolling) return;
       try {
         const res = await fetch(`/status/${sessionId}`);
+        if (!isUploadPolling) return;
         if (res.ok) {
           const data = await res.json();
-          if (progressText && data.message) {
-            progressText.textContent = data.message;
+          if (!isUploadPolling) return;
+          if (data.message && data.message !== lastLoggedMsg) {
+            const msg = data.message;
+            if (msg.includes("Preparing") || msg.includes("Validating")) {
+              updateUploadStage(1, msg, 15, msg);
+            } else if (msg.includes("Reading") || msg.includes("Transcribing") || msg.includes("page") || msg.includes("slide")) {
+              updateUploadStage(2, msg, 45, msg);
+            } else if (msg.includes("Chunk") || msg.includes("Splitting")) {
+              updateUploadStage(3, msg, 70, msg);
+            } else if (msg.includes("Index") || msg.includes("review") || msg.includes("Confirm")) {
+              updateUploadStage(4, msg, 90, msg);
+            } else if (msg.includes("complete") || msg.includes("Complete")) {
+              stopStatusPolling(true);
+            } else {
+              if (uploadPipelineSub) uploadPipelineSub.textContent = msg;
+              if (uploadPipelineLog) {
+                const entry = document.createElement("div");
+                entry.className = "upload-log-entry";
+                entry.textContent = `▸ ${msg}`;
+                uploadPipelineLog.appendChild(entry);
+                uploadPipelineLog.scrollTop = uploadPipelineLog.scrollHeight;
+              }
+            }
           }
         }
       } catch (e) {
@@ -162,12 +219,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 500);
   }
 
-  function stopStatusPolling() {
+  function stopStatusPolling(success = true) {
+    isUploadPolling = false;
     if (statusPollTimer) {
       clearInterval(statusPollTimer);
       statusPollTimer = null;
     }
-    if (uploadProgress) uploadProgress.style.display = "none";
+    if (success) {
+      // Complete all stages cleanly
+      if (uploadPipelineBar) uploadPipelineBar.style.width = "100%";
+      for (let i = 1; i <= 4; i++) {
+        const node = document.getElementById(`uploadStage${i}`);
+        if (node) {
+          node.classList.remove("active", "upcoming", "error-state");
+          node.classList.add("completed");
+        }
+      }
+      if (uploadPipelineSub) uploadPipelineSub.textContent = "Ingestion complete!";
+      if (uploadPipelineLog && lastLoggedMsg !== "Ingestion complete.") {
+        lastLoggedMsg = "Ingestion complete.";
+        const entry = document.createElement("div");
+        entry.className = "upload-log-entry";
+        entry.textContent = `▸ Ingestion complete.`;
+        uploadPipelineLog.appendChild(entry);
+        uploadPipelineLog.scrollTop = uploadPipelineLog.scrollHeight;
+      }
+    } else {
+      // Error state
+      for (let i = 1; i <= 4; i++) {
+        const node = document.getElementById(`uploadStage${i}`);
+        if (node && node.classList.contains("active")) {
+          node.classList.remove("active");
+          node.classList.add("error-state");
+        }
+      }
+    }
   }
 
   uploadBtn.addEventListener("click", async () => {
@@ -214,7 +300,7 @@ document.addEventListener("DOMContentLoaded", () => {
       selectedFiles = [];
       renderFileList();
     } catch (err) {
-      stopStatusPolling();
+      stopStatusPolling(false);
       showNotice(`Upload Error: ${err.message}`, "danger");
     } finally {
       setLoading(uploadBtn, false, "Upload & Process Notes");
@@ -289,6 +375,158 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // RAG Stage Helper Function
+  function updateRagStage(prefix, stageNum, subText, percent) {
+    const loader = document.getElementById(`${prefix}RagLoader`);
+    const subEl = document.getElementById(`${prefix}RagSub`);
+    const barEl = document.getElementById(`${prefix}RagBar`);
+
+    if (loader) loader.style.display = "block";
+    if (subEl) subEl.textContent = subText;
+    if (barEl) barEl.style.width = `${percent}%`;
+
+    for (let i = 1; i <= 4; i++) {
+      const node = document.getElementById(`${prefix}Stage${i}`);
+      if (!node) continue;
+      node.classList.remove("completed", "active", "upcoming", "error-state");
+      if (i < stageNum) {
+        node.classList.add("completed");
+      } else if (i === stageNum) {
+        node.classList.add("active");
+      } else {
+        node.classList.add("upcoming");
+      }
+    }
+  }
+
+  function completeRagStage(prefix) {
+    const loader = document.getElementById(`${prefix}RagLoader`);
+    const barEl = document.getElementById(`${prefix}RagBar`);
+    if (barEl) barEl.style.width = "100%";
+    for (let i = 1; i <= 4; i++) {
+      const node = document.getElementById(`${prefix}Stage${i}`);
+      if (node) {
+        node.classList.remove("active", "upcoming", "error-state");
+        node.classList.add("completed");
+      }
+    }
+    setTimeout(() => {
+      if (loader) loader.style.display = "none";
+    }, 800);
+  }
+
+  function errorRagStage(prefix, errorMsg) {
+    const subEl = document.getElementById(`${prefix}RagSub`);
+    if (subEl) subEl.textContent = `Error: ${errorMsg}`;
+    for (let i = 1; i <= 4; i++) {
+      const node = document.getElementById(`${prefix}Stage${i}`);
+      if (node && node.classList.contains("active")) {
+        node.classList.remove("active");
+        node.classList.add("error-state");
+      }
+    }
+  }
+
+  // Helper for SSE Streaming with Detailed RAG Pipeline Loader
+  async function streamFetch(url, bodyData, contentEl, resultCardEl, sourcesEl, btn, btnLabel, loaderPrefix) {
+    setLoading(btn, true, "Processing & Streaming...");
+    resultCardEl.style.display = "none";
+    contentEl.innerHTML = "";
+    sourcesEl.innerHTML = "";
+    let rawMarkdown = "";
+
+    updateRagStage(loaderPrefix, 1, "Understanding query & extracting concepts...", 25);
+
+    try {
+      updateRagStage(loaderPrefix, 2, "Retrieving relevant chunks from notes...", 50);
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Request failed with status ${response.status}`);
+      }
+
+      updateRagStage(loaderPrefix, 3, "Generating detailed response via LLM...", 75);
+      resultCardEl.style.display = "block";
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+          const dataStr = trimmed.substring(6);
+
+          if (dataStr === "[DONE]") break;
+
+          try {
+            const eventData = JSON.parse(dataStr);
+            if (eventData.type === "chunk" && eventData.text) {
+              rawMarkdown += eventData.text;
+              contentEl.innerHTML = renderMarkdown(rawMarkdown);
+            } else if (eventData.type === "sources" && eventData.sources) {
+              updateRagStage(loaderPrefix, 4, "Finalising answer & formatting citations...", 95);
+              renderSources(sourcesEl, eventData.sources);
+            }
+          } catch (e) {
+            console.warn("Error parsing stream chunk:", e);
+          }
+        }
+      }
+      completeRagStage(loaderPrefix);
+    } catch (err) {
+      errorRagStage(loaderPrefix, err.message);
+      alert(`Streaming Error: ${err.message}`);
+    } finally {
+      setLoading(btn, false, btnLabel);
+    }
+  }
+
+  // Reset Session / Clear Notes
+  const clearNotesBtn = document.getElementById("clearNotesBtn");
+  if (clearNotesBtn) {
+    clearNotesBtn.addEventListener("click", async () => {
+      if (!confirm("Are you sure you want to clear all indexed notes for this session?")) return;
+      try {
+        const res = await fetch(`/clear/${sessionId}`, { method: "POST" });
+        if (res.ok) {
+          selectedFiles = [];
+          renderFileList();
+          if (uploadPipelineLog) uploadPipelineLog.innerHTML = "";
+          if (uploadPipelineSub) uploadPipelineSub.textContent = "Session reset!";
+          if (uploadPipelineBar) uploadPipelineBar.style.width = "0%";
+          for (let i = 1; i <= 4; i++) {
+            const node = document.getElementById(`uploadStage${i}`);
+            if (node) node.classList.remove("completed", "active", "error-state");
+          }
+          if (askResult) askResult.style.display = "none";
+          if (askContent) askContent.innerHTML = "";
+          if (askSources) askSources.innerHTML = "";
+          if (triageResult) triageResult.style.display = "none";
+          if (triageContent) triageContent.innerHTML = "";
+          if (triageSources) triageSources.innerHTML = "";
+          showNotice("Session reset! All indexed notes cleared.", "success");
+        }
+      } catch (e) {
+        alert("Failed to reset session: " + e.message);
+      }
+    });
+  }
+
   // Tab 1: Ask
   const askBtn = document.getElementById("askBtn");
   const askInput = document.getElementById("askInput");
@@ -296,31 +534,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const askContent = document.getElementById("askContent");
   const askSources = document.getElementById("askSources");
 
-  askBtn.addEventListener("click", async () => {
+  askBtn.addEventListener("click", () => {
     const query = askInput.value.trim();
     if (!query) return;
 
-    setLoading(askBtn, true, "Searching & Thinking...");
-    askResult.style.display = "none";
-
-    try {
-      const res = await fetch("/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, query: query }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Request failed");
-
-      askContent.innerHTML = renderMarkdown(data.answer);
-      renderSources(askSources, data.sources);
-      askResult.style.display = "block";
-    } catch (err) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(askBtn, false, "Get Answer");
-    }
+    streamFetch("/ask/stream", { session_id: sessionId, query: query }, askContent, askResult, askSources, askBtn, "Get Answer ↗", "ask");
   });
 
   // Tab 2: Panic Plan (Triage)
@@ -330,30 +548,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const triageContent = document.getElementById("triageContent");
   const triageSources = document.getElementById("triageSources");
 
-  triageBtn.addEventListener("click", async () => {
+  triageBtn.addEventListener("click", () => {
     const hours = parseFloat(triageHours.value) || 6.0;
 
-    setLoading(triageBtn, true, "Triaging Schedule...");
-    triageResult.style.display = "none";
-
-    try {
-      const res = await fetch("/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, hours_left: hours }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Request failed");
-
-      triageContent.innerHTML = renderMarkdown(data.answer);
-      renderSources(triageSources, data.sources);
-      triageResult.style.display = "block";
-    } catch (err) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(triageBtn, false, "Build Panic Timetable");
-    }
+    streamFetch("/triage/stream", { session_id: sessionId, hours_left: hours }, triageContent, triageResult, triageSources, triageBtn, "Build Panic Timetable ↗", "triage");
   });
 
   // Helper Functions
@@ -393,10 +591,126 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderMarkdown(text) {
+    if (!text) return "";
+
+    let processed = text;
+
+    // Convert any stray LaTeX algorithm blocks (\begin{algorithm}...\end{algorithm}) into clean pseudocode blocks
+    processed = processed.replace(/\\begin\{algorithm\}[\s\S]*?\\end\{algorithm\}/g, (match) => {
+      let clean = match
+        .replace(/\\begin\{(algorithm|algorithmic)\}(\[[^\]]*\])?/g, "")
+        .replace(/\\end\{(algorithm|algorithmic)\}/g, "")
+        .replace(/\\caption\{([^}]*)\}/g, "// Caption: $1\n")
+        .replace(/\\State\s*/g, "")
+        .replace(/\\texttt\{([^}]*)\}/g, "$1")
+        .replace(/\\textbf\{([^}]*)\}/g, "$1")
+        .replace(/\\hspace\*?\{[^}]*\}/g, "  ")
+        .replace(/\\end\{document\}/g, "")
+        .trim();
+      return `\n\`\`\`pseudocode\n${clean}\n\`\`\`\n`;
+    });
+
+    // 1. Protect Markdown code blocks from LaTeX regex replacement
+    const codeBlocks = [];
+    processed = processed.replace(/```[\s\S]*?```/g, (match) => {
+      const idx = codeBlocks.length;
+      codeBlocks.push(match);
+      return `%%CODE_BLOCK_${idx}%%`;
+    });
+
+    // 2. Protect display math $$...$$
+    const displayMathBlocks = [];
+    processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, content) => {
+      const idx = displayMathBlocks.length;
+      displayMathBlocks.push(content);
+      return `%%DISPLAY_MATH_${idx}%%`;
+    });
+
+    // 3. Protect inline math $...$
+    const inlineMathBlocks = [];
+    processed = processed.replace(/\$([^$\n]+?)\$/g, (match, content) => {
+      const idx = inlineMathBlocks.length;
+      inlineMathBlocks.push(content);
+      return `%%INLINE_MATH_${idx}%%`;
+    });
+
+    // 4. Handle \[...\] and \(...\)
+    const displayMathBlocks2 = [];
+    processed = processed.replace(/\\\[([\s\S]*?)\\\]/g, (match, content) => {
+      const idx = displayMathBlocks2.length;
+      displayMathBlocks2.push(content);
+      return `%%DISPLAY_MATH2_${idx}%%`;
+    });
+
+    const inlineMathBlocks2 = [];
+    processed = processed.replace(/\\\(([\s\S]*?)\\\)/g, (match, content) => {
+      const idx = inlineMathBlocks2.length;
+      inlineMathBlocks2.push(content);
+      return `%%INLINE_MATH2_${idx}%%`;
+    });
+
+    // Parse markdown
+    let html;
     if (typeof marked !== "undefined" && marked.parse) {
-      return marked.parse(text || "");
+      html = marked.parse(processed);
+    } else {
+      html = escapeHtml(processed);
     }
-    return escapeHtml(text || "");
+
+    // Restore display math $$...$$
+    html = html.replace(/%%DISPLAY_MATH_(\d+)%%/g, (match, idx) => {
+      const latex = displayMathBlocks[parseInt(idx)];
+      try {
+        if (typeof katex !== "undefined") {
+          return katex.renderToString(latex, { displayMode: true, throwOnError: false });
+        }
+      } catch (e) { console.warn("KaTeX display error:", e); }
+      return `$$${latex}$$`;
+    });
+
+    // Restore inline math $...$
+    html = html.replace(/%%INLINE_MATH_(\d+)%%/g, (match, idx) => {
+      const latex = inlineMathBlocks[parseInt(idx)];
+      try {
+        if (typeof katex !== "undefined") {
+          return katex.renderToString(latex, { displayMode: false, throwOnError: false });
+        }
+      } catch (e) { console.warn("KaTeX inline error:", e); }
+      return `$${latex}$`;
+    });
+
+    // Restore display math \[...\]
+    html = html.replace(/%%DISPLAY_MATH2_(\d+)%%/g, (match, idx) => {
+      const latex = displayMathBlocks2[parseInt(idx)];
+      try {
+        if (typeof katex !== "undefined") {
+          return katex.renderToString(latex, { displayMode: true, throwOnError: false });
+        }
+      } catch (e) { console.warn("KaTeX display2 error:", e); }
+      return `\\[${latex}\\]`;
+    });
+
+    // Restore inline math \(...\)
+    html = html.replace(/%%INLINE_MATH2_(\d+)%%/g, (match, idx) => {
+      const latex = inlineMathBlocks2[parseInt(idx)];
+      try {
+        if (typeof katex !== "undefined") {
+          return katex.renderToString(latex, { displayMode: false, throwOnError: false });
+        }
+      } catch (e) { console.warn("KaTeX inline2 error:", e); }
+      return `\\(${latex}\\)`;
+    });
+
+    // 5. Restore Code Blocks
+    html = html.replace(/%%CODE_BLOCK_(\d+)%%/g, (match, idx) => {
+      const block = codeBlocks[parseInt(idx)];
+      if (typeof marked !== "undefined" && marked.parse) {
+        return marked.parse(block);
+      }
+      return `<pre><code>${escapeHtml(block)}</code></pre>`;
+    });
+
+    return html;
   }
 
   function renderSources(container, sources) {

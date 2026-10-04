@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import json
 import tempfile
@@ -12,9 +13,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from app.ingest import extract_text, SUPPORTED_EXTENSIONS
-from app.rag import chunk_text, add_to_store, retrieve, retrieve_multi_topic, retrieve_triage_context, format_sources
+from app.rag import chunk_text, add_to_store, clear_store, retrieve, retrieve_multi_topic, retrieve_triage_context, format_sources
 from app import prompts
-from app.llm import chat, get_llm_config
+from app.llm import chat, chat_stream, get_llm_config
 
 
 app = FastAPI(title="Deadline Guardian API", version="1.0.0")
@@ -27,6 +28,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.post("/clear/{session_id}")
+def clear_session_store(session_id: str):
+    clear_store(session_id)
+    if session_id in _UPLOAD_JOBS:
+        del _UPLOAD_JOBS[session_id]
+    return {"session_id": session_id, "status": "cleared", "message": "Cleared all indexed notes."}
 
 
 # In-memory status job tracker per session_id
@@ -99,7 +108,7 @@ async def upload_files(
 
     _UPLOAD_JOBS[session_id] = {
         "status": "processing",
-        "message": "Preparing files for processing...",
+        "message": "Validating uploaded files...",
         "skipped": [],
         "transcriptions": []
     }
@@ -137,6 +146,7 @@ async def upload_files(
             temp_file_path.write_bytes(contents)
 
             try:
+                progress_callback(f"Reading '{filename}'...")
                 extracted = extract_text(temp_file_path, progress_callback=progress_callback)
                 all_extracted.extend(extracted)
                 processed_count += 1
@@ -158,8 +168,10 @@ async def upload_files(
     # Immediately index standard text items
     text_chunks_count = 0
     if text_items:
-        chunks = chunk_text(text_items, chunk_size=500, chunk_overlap=50)
+        progress_callback(f"Chunking {len(text_items)} text segments...")
+        chunks = chunk_text(text_items, chunk_size=150, chunk_overlap=30)
         text_chunks_count = len(chunks)
+        progress_callback(f"Indexing {text_chunks_count} chunks into vector store...")
         add_to_store(session_id, chunks)
 
     if vision_items:
@@ -197,7 +209,7 @@ def confirm_transcription_text(req: ConfirmTextRequest):
         raise HTTPException(status_code=400, detail="No transcribed items provided for confirmation.")
 
     docs = [{"text": item.text, "source": item.source, "page": item.page} for item in req.items]
-    chunks = chunk_text(docs, chunk_size=500, chunk_overlap=50)
+    chunks = chunk_text(docs, chunk_size=150, chunk_overlap=30)
     total_chunks = add_to_store(req.session_id, chunks)
 
     if req.session_id in _UPLOAD_JOBS:
@@ -216,23 +228,90 @@ def ask_question(req: AskRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    chunks = retrieve_multi_topic(req.session_id, req.query, max_total_chunks=14)
-    if not chunks:
+    raw_sub_queries = [line.strip() for line in re.split(r'[\n;?]+', req.query) if line.strip()]
+    sub_queries = [q for q in raw_sub_queries if len(q) >= 3]
+    if not sub_queries:
+        sub_queries = [req.query.strip()]
+
+    answers = []
+    all_chunks = []
+    seen_keys = set()
+
+    # Process EACH sub-topic with its own focused vector search and dedicated AI call
+    for topic_query in sub_queries:
+        chunks = retrieve_multi_topic(req.session_id, topic_query, k_per_topic=7, max_total_chunks=14)
+        if not chunks:
+            # Fallback to general vector search if focused search yields no hits
+            chunks = retrieve(req.session_id, topic_query, k=7)
+        if not chunks:
+            continue
+
+        for c in chunks:
+            key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                all_chunks.append(c)
+
+        sys_prompt, user_prompt = prompts.build_ask_prompt(topic_query, chunks)
+        topic_answer = chat(sys_prompt, user_prompt)
+        answers.append(topic_answer)
+
+    if not answers:
         raise HTTPException(
             status_code=404,
             detail=f"No context found for session '{req.session_id}'. Please upload study materials first."
         )
 
-    sys_prompt, user_prompt = prompts.build_ask_prompt(req.query, chunks)
-    answer = chat(sys_prompt, user_prompt)
-    sources = format_sources(chunks)
+    final_answer = "\n\n---\n\n".join(answers)
+    sources = format_sources(all_chunks)
 
-    return {"answer": answer, "sources": sources}
+    return {"answer": final_answer, "sources": sources}
+
+
+@app.post("/ask/stream")
+def ask_question_stream(req: AskRequest):
+    from fastapi.responses import StreamingResponse
+
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+
+    raw_sub_queries = [line.strip() for line in re.split(r'[\n;?]+', req.query) if line.strip()]
+    sub_queries = [q for q in raw_sub_queries if len(q) >= 3]
+    if not sub_queries:
+        sub_queries = [req.query.strip()]
+
+    all_chunks = []
+    seen_keys = set()
+
+    def generate_events():
+        for i, topic_query in enumerate(sub_queries):
+            chunks = retrieve_multi_topic(req.session_id, topic_query, k_per_topic=7, max_total_chunks=14)
+            if not chunks:
+                chunks = retrieve(req.session_id, topic_query, k=7)
+
+            for c in chunks:
+                key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_chunks.append(c)
+
+            if i > 0:
+                yield f"data: {json.dumps({'type': 'chunk', 'text': '\n\n---\n\n'})}\n\n"
+
+            sys_prompt, user_prompt = prompts.build_ask_prompt(topic_query, chunks)
+            for token in chat_stream(sys_prompt, user_prompt):
+                yield f"data: {json.dumps({'type': 'chunk', 'text': token})}\n\n"
+
+        sources = format_sources(all_chunks)
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate_events(), media_type="text/event-stream")
 
 
 @app.post("/triage")
 def deadline_triage(req: TriageRequest):
-    triage_data = retrieve_triage_context(req.session_id, max_total_chunks=25)
+    triage_data = retrieve_triage_context(req.session_id, max_total_chunks=38)
 
     if not triage_data.get("all_chunks"):
         raise HTTPException(
@@ -240,11 +319,96 @@ def deadline_triage(req: TriageRequest):
             detail=f"No context found for session '{req.session_id}'. Please upload study materials first."
         )
 
-    sys_prompt, user_prompt = prompts.build_triage_prompt(req.hours_left or 6.0, triage_data)
-    answer = chat(sys_prompt, user_prompt)
-    sources = format_sources(triage_data.get("all_chunks", []))
+    # Pass 1: High-Level Priority Matrix & Hour-by-Hour Timetable
+    sys1, user1 = prompts.build_triage_pass1_prompt(req.hours_left or 6.0, triage_data)
+    pass1_answer = chat(sys1, user1)
 
-    return {"answer": answer, "sources": sources}
+    # Extract high-priority topic titles from Pass 1 output (or fallback to top syllabus topics)
+    extracted_topics = []
+    for line in pass1_answer.splitlines():
+        if "Tier 1" in line or "🔴" in line or "Must Know" in line:
+            clean_line = re.sub(r'[*`#🔴🟡🟢]', '', line).strip()
+            if ":" in clean_line:
+                clean_line = clean_line.split(":", 1)[1].strip()
+            extracted_topics.extend([t.strip() for t in clean_line.split(",") if len(t.strip()) > 3])
+
+    if not extracted_topics:
+        extracted_topics = ["Core Exam Concepts", "High Weightage Formulas & Definitions"]
+
+    # Limit to top 5 topics max for Pass 2 deep-dive
+    top_topics = extracted_topics[:5]
+
+    # Perform focused vector retrieval for the extracted topic batch
+    topic_query = " ".join(top_topics)
+    pass2_chunks = retrieve_multi_topic(req.session_id, topic_query, k_per_topic=7, max_total_chunks=20)
+    if not pass2_chunks:
+        pass2_chunks = triage_data.get("all_chunks", [])[:15]
+
+    # Pass 2: Deep-Dive Revision Cheats & Notes for high-yield topics
+    sys2, user2 = prompts.build_triage_pass2_prompt(req.hours_left or 6.0, top_topics, pass2_chunks)
+    pass2_answer = chat(sys2, user2)
+
+    # Combine Pass 1 + Pass 2
+    full_answer = f"{pass1_answer}\n\n---\n\n{pass2_answer}"
+
+    # Merge sources
+    combined_chunks = triage_data.get("all_chunks", []) + pass2_chunks
+    sources = format_sources(combined_chunks)
+
+    return {"answer": full_answer, "sources": sources}
+
+
+@app.post("/triage/stream")
+def deadline_triage_stream(req: TriageRequest):
+    from fastapi.responses import StreamingResponse
+
+    triage_data = retrieve_triage_context(req.session_id, max_total_chunks=38)
+
+    if not triage_data.get("all_chunks"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No context found for session '{req.session_id}'. Please upload study materials first."
+        )
+
+    def generate_triage_stream():
+        # Pass 1
+        sys1, user1 = prompts.build_triage_pass1_prompt(req.hours_left or 6.0, triage_data)
+        pass1_full = []
+        for token in chat_stream(sys1, user1):
+            pass1_full.append(token)
+            yield f"data: {json.dumps({'type': 'chunk', 'text': token})}\n\n"
+
+        pass1_text = "".join(pass1_full)
+        yield f"data: {json.dumps({'type': 'chunk', 'text': '\n\n---\n\n'})}\n\n"
+
+        # Pass 2
+        extracted_topics = []
+        for line in pass1_text.splitlines():
+            if "Tier 1" in line or "🔴" in line or "Must Know" in line:
+                clean_line = re.sub(r'[*`#🔴🟡🟢]', '', line).strip()
+                if ":" in clean_line:
+                    clean_line = clean_line.split(":", 1)[1].strip()
+                extracted_topics.extend([t.strip() for t in clean_line.split(",") if len(t.strip()) > 3])
+
+        if not extracted_topics:
+            extracted_topics = ["Core Exam Concepts", "High Weightage Formulas & Definitions"]
+
+        top_topics = extracted_topics[:5]
+        topic_query = " ".join(top_topics)
+        pass2_chunks = retrieve_multi_topic(req.session_id, topic_query, k_per_topic=7, max_total_chunks=20)
+        if not pass2_chunks:
+            pass2_chunks = triage_data.get("all_chunks", [])[:15]
+
+        sys2, user2 = prompts.build_triage_pass2_prompt(req.hours_left or 6.0, top_topics, pass2_chunks)
+        for token in chat_stream(sys2, user2):
+            yield f"data: {json.dumps({'type': 'chunk', 'text': token})}\n\n"
+
+        combined_chunks = triage_data.get("all_chunks", []) + pass2_chunks
+        sources = format_sources(combined_chunks)
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate_triage_stream(), media_type="text/event-stream")
 
 
 # Mount Static Files

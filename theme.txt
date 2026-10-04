@@ -1,0 +1,789 @@
+Redesign my existing website UI based on the attached screenshots, while keeping ALL existing functionality, routes, API calls, backend logic, RAG logic, state management, and uploaded-data behavior intact.
+
+The project is a RAG-based study assistant called “Deadline Guardian”.
+
+IMPORTANT:
+Do not rebuild the application from scratch.
+Do not remove existing functionality.
+Only improve the visual design, UX, loading states, and presentation.
+Use the current codebase and adapt the existing components.
+
+========================
+DESIGN DIRECTION
+========================
+
+Transform the current dark purple/neon UI into a BRUTALIST editorial-style interface.
+
+Primary visual identity:
+- Warm peach background
+- Dark forest green as the main accent
+- Pale/light green for secondary surfaces
+- Near-black text and borders
+- Brutalist thick borders
+- Large hard offset shadows
+- Sharp rectangular cards
+- Very limited border radius; preferably 0–4px
+- Bold condensed/monospace-style typography for headings
+- Clean readable font for body text
+- Chunky icons
+- Slightly imperfect/blocky visual elements
+- Pixel/grid decorative elements in the background
+- Strong visual hierarchy
+- No glassmorphism
+- No excessive gradients
+- No generic modern SaaS look
+- No excessive rounded cards
+- No floating purple/neon elements
+
+The result should feel like:
+“academic productivity tool + brutalist editorial website + modern RAG interface”
+
+Color direction:
+- Background: warm peach / light peach
+- Primary: deep forest green
+- Secondary: muted sage/light green
+- Text: almost black
+- Borders: almost black
+- Status/success: green
+- Warning/loading: peach/orange
+- Avoid purple as the dominant UI color
+
+========================
+HEADER
+========================
+
+Redesign the header in the same brutalist style.
+
+Keep:
+- Deadline Guardian branding
+- lightning/logo icon
+- Hacktoberfest badge
+- session indicator
+
+Make the header:
+- peach background
+- thick bottom border
+- bold dark typography
+- hard offset shadow where appropriate
+- rectangular badges
+- compact and clean
+
+The session indicator should look like a brutalist status badge:
+“● Session: session_xij2...”
+
+========================
+UPLOAD SECTION
+========================
+
+Redesign the file upload area.
+
+Create a large brutalist rectangular upload card with:
+- thick black/dark border
+- hard offset shadow
+- peach/light cream surface
+- dashed inner drop-zone
+- large folder icon
+- bold heading
+
+Heading:
+
+“DRAG & DROP YOUR NOTES, SLIDES & PAST PAPERS HERE”
+
+Subtext:
+
+“Supports PDF, PPTX, TXT, MD, JPG, PNG, WEBP
+(Up to 10 files, 10MB max each)”
+
+Keep the existing file upload behavior exactly as it currently works.
+
+Below the dropzone retain the ingestion status, for example:
+
+“Successfully ingested 7 files (419 new chunks). Total stored: 419 chunks.”
+
+The upload button should become a chunky forest-green brutalist button:
+
+“UPLOAD & PROCESS NOTES →”
+
+========================
+RAG PIPELINE LOADING EXPERIENCE
+========================
+
+THIS IS THE MOST IMPORTANT CHANGE.
+
+Because this is a RAG application, do not use a generic spinner or vague “Loading...” message.
+
+Whenever the backend is processing a RAG request, display a large brutalist processing panel.
+
+Title:
+
+“RAG PIPELINE IN WORK...”
+
+Subtitle:
+
+“Processing your query and finding the most relevant information.”
+
+Show four explicit pipeline stages:
+
+1. UNDERSTAND QUERY
+   “Rewriting & extracting key concepts...”
+
+2. RETRIEVE CONTEXT
+   “Searching relevant chunks in your notes...”
+
+3. GENERATE ANSWER
+   “Using LLM with retrieved context...”
+
+4. FINALISING
+   “Formatting answer with sources...”
+
+Represent the stages horizontally using chunky icons and connected lines.
+
+The currently active stage should be visually highlighted.
+
+Completed stages:
+- forest green
+- check mark
+- solid styling
+
+Current stage:
+- peach/orange highlight
+- animated but brutalist
+- clear visual emphasis
+
+Upcoming stages:
+- muted/pale green
+- lower contrast
+
+Add a thick progress bar underneath.
+
+Example:
+
+“Searching relevant content... (3/4)”
+
+The progress should correspond to REAL application state whenever possible.
+
+Do NOT simply create a fake 4-second animation.
+
+If the backend already exposes loading states/events, connect the UI to them.
+
+If the current backend does not expose granular RAG stages, create a clean frontend abstraction for these states:
+
+UNDERSTAND_QUERY
+RETRIEVE_CONTEXT
+GENERATE_ANSWER
+FINALISING
+COMPLETE
+ERROR
+
+Map the existing RAG request lifecycle into these states without changing the actual backend behavior.
+
+The loader must disappear automatically when the answer is ready or an error occurs.
+
+For errors, replace the pipeline success styling with a clear brutalist error state.
+
+========================
+ASK ANYTHING / PANIC PLAN
+========================
+
+Preserve the existing tabs:
+
+“? ASK ANYTHING”
+and
+“⏱ PANIC PLAN”
+
+Redesign them in the same brutalist style.
+
+Active tab:
+- peach/cream background
+- thick border
+- forest-green accent
+
+Inactive tab:
+- lighter background
+- muted text
+
+Question input should become a large rectangular brutalist input.
+
+Placeholder:
+
+“Ask a question from your notes...”
+
+Submit button:
+- forest green
+- thick dark border
+- hard shadow
+- paper-plane icon
+
+========================
+ANSWER / SOURCE UI
+========================
+
+Redesign generated answers to fit the same visual language.
+
+Answers should appear inside brutalist editorial cards.
+
+Sources/citations should be clearly visible and styled as compact source blocks.
+
+For citations such as:
+
+“ch5.pptx (p.49)”
+
+use:
+- dark text
+- green accent
+- strong border
+- compact rectangular card
+
+Do not make citations look like generic blue hyperlinks.
+
+========================
+SOURCE CITATIONS
+========================
+
+Keep the existing source citation functionality.
+
+Redesign the source citation section using brutalist cards.
+
+Example heading:
+
+“▣ SOURCE CITATIONS (43)”
+
+Each citation card should include:
+- file name
+- page number
+- short retrieved excerpt
+- clear separation between source cards
+
+The current screenshot shows a long vertical list of these citations. Preserve that behavior.
+
+========================
+PANIC PLAN
+========================
+
+Keep all current Panic Plan functionality.
+
+Redesign:
+- Priority Matrix
+- Tier 1 / Tier 2 / Tier 3
+- topics
+- timetable
+- exam countdown
+
+in brutalist cards.
+
+Use forest green for high-priority/high-yield information.
+
+Use pale green for medium priority.
+
+Use peach/orange accents for urgent information.
+
+========================
+BACKGROUND / DECORATION
+========================
+
+Add subtle brutalist decorative elements:
+- pixel grids
+- offset blocks
+- small geometric squares
+- partial corner blocks
+- vertical strips
+- dotted patterns
+
+Keep them subtle.
+
+They should enhance the design, not interfere with readability.
+
+========================
+ANIMATION
+========================
+
+Animations should be intentional and minimal.
+
+Use:
+- stepped progress
+- slight block movement
+- hard-shadow button press
+- subtle stage transitions
+- progress bar movement
+Redesign my existing website UI based on the attached screenshots, while keeping ALL existing functionality, routes, API calls, backend logic, RAG logic, state management, and uploaded-data behavior intact.
+
+The project is a RAG-based study assistant called “Deadline Guardian”.
+
+IMPORTANT:
+Do not rebuild the application from scratch.
+Do not remove existing functionality.
+Only improve the visual design, UX, loading states, and presentation.
+Use the current codebase and adapt the existing components.
+
+========================
+DESIGN DIRECTION
+========================
+
+Transform the current dark purple/neon UI into a BRUTALIST editorial-style interface.
+
+Primary visual identity:
+- Warm peach background
+- Dark forest green as the main accent
+- Pale/light green for secondary surfaces
+- Near-black text and borders
+- Brutalist thick borders
+- Large hard offset shadows
+- Sharp rectangular cards
+- Very limited border radius; preferably 0–4px
+- Bold condensed/monospace-style typography for headings
+- Clean readable font for body text
+- Chunky icons
+- Slightly imperfect/blocky visual elements
+- Pixel/grid decorative elements in the background
+- Strong visual hierarchy
+- No glassmorphism
+- No excessive gradients
+- No generic modern SaaS look
+- No excessive rounded cards
+- No floating purple/neon elements
+
+The result should feel like:
+“academic productivity tool + brutalist editorial website + modern RAG interface”
+
+Color direction:
+- Background: warm peach / light peach
+- Primary: deep forest green
+- Secondary: muted sage/light green
+- Text: almost black
+- Borders: almost black
+- Status/success: green
+- Warning/loading: peach/orange
+- Avoid purple as the dominant UI color
+
+========================
+HEADER
+========================
+
+Redesign the header in the same brutalist style.
+
+Keep:
+- Deadline Guardian branding
+- lightning/logo icon
+- Hacktoberfest badge
+- session indicator
+
+Make the header:
+- peach background
+- thick bottom border
+- bold dark typography
+- hard offset shadow where appropriate
+- rectangular badges
+- compact and clean
+
+The session indicator should look like a brutalist status badge:
+“● Session: session_xij2...”
+
+========================
+UPLOAD SECTION
+========================
+
+Redesign the file upload area.
+
+Create a large brutalist rectangular upload card with:
+- thick black/dark border
+- hard offset shadow
+- peach/light cream surface
+- dashed inner drop-zone
+- large folder icon
+- bold heading
+
+Heading:
+
+“DRAG & DROP YOUR NOTES, SLIDES & PAST PAPERS HERE”
+
+Subtext:
+
+“Supports PDF, PPTX, TXT, MD, JPG, PNG, WEBP
+(Up to 10 files, 10MB max each)”
+
+Keep the existing file upload behavior exactly as it currently works.
+
+Below the dropzone retain the ingestion status, for example:
+
+“Successfully ingested 7 files (419 new chunks). Total stored: 419 chunks.”
+
+The upload button should become a chunky forest-green brutalist button:
+
+“UPLOAD & PROCESS NOTES →”
+
+========================
+RAG PIPELINE LOADING EXPERIENCE
+========================
+
+THIS IS THE MOST IMPORTANT CHANGE.
+
+Because this is a RAG application, do not use a generic spinner or vague “Loading...” message.
+
+Whenever the backend is processing a RAG request, display a large brutalist processing panel.
+
+Title:
+
+“RAG PIPELINE IN WORK...”
+
+Subtitle:
+
+“Processing your query and finding the most relevant information.”
+
+Show four explicit pipeline stages:
+
+1. UNDERSTAND QUERY
+   “Rewriting & extracting key concepts...”
+
+2. RETRIEVE CONTEXT
+   “Searching relevant chunks in your notes...”
+
+3. GENERATE ANSWER
+   “Using LLM with retrieved context...”
+
+4. FINALISING
+   “Formatting answer with sources...”
+
+Represent the stages horizontally using chunky icons and connected lines.
+
+The currently active stage should be visually highlighted.
+
+Completed stages:
+- forest green
+- check mark
+- solid styling
+
+Current stage:
+- peach/orange highlight
+- animated but brutalist
+- clear visual emphasis
+
+Upcoming stages:
+- muted/pale green
+- lower contrast
+
+Add a thick progress bar underneath.
+
+Example:
+
+“Searching relevant content... (3/4)”
+
+The progress should correspond to REAL application state whenever possible.
+
+Do NOT simply create a fake 4-second animation.
+
+If the backend already exposes loading states/events, connect the UI to them.
+
+If the current backend does not expose granular RAG stages, create a clean frontend abstraction for these states:
+
+UNDERSTAND_QUERY
+RETRIEVE_CONTEXT
+GENERATE_ANSWER
+FINALISING
+COMPLETE
+ERROR
+
+Map the existing RAG request lifecycle into these states without changing the actual backend behavior.
+
+The loader must disappear automatically when the answer is ready or an error occurs.
+
+For errors, replace the pipeline success styling with a clear brutalist error state.
+
+========================
+ASK ANYTHING / PANIC PLAN
+========================
+
+Preserve the existing tabs:
+
+“? ASK ANYTHING”
+and
+“⏱ PANIC PLAN”
+
+Redesign them in the same brutalist style.
+
+Active tab:
+- peach/cream background
+- thick border
+- forest-green accent
+
+Inactive tab:
+- lighter background
+- muted text
+
+Question input should become a large rectangular brutalist input.
+
+Placeholder:
+
+“Ask a question from your notes...”
+
+Submit button:
+- forest green
+- thick dark border
+- hard shadow
+- paper-plane icon
+
+========================
+ANSWER / SOURCE UI
+========================
+
+Redesign generated answers to fit the same visual language.
+
+Answers should appear inside brutalist editorial cards.
+
+Sources/citations should be clearly visible and styled as compact source blocks.
+
+For citations such as:
+
+“ch5.pptx (p.49)”
+
+use:
+- dark text
+- green accent
+- strong border
+- compact rectangular card
+
+Do not make citations look like generic blue hyperlinks.
+
+========================
+SOURCE CITATIONS
+========================
+
+Keep the existing source citation functionality.
+
+Redesign the source citation section using brutalist cards.
+
+Example heading:
+
+“▣ SOURCE CITATIONS (43)”
+
+Each citation card should include:
+- file name
+- page number
+- short retrieved excerpt
+- clear separation between source cards
+
+The current screenshot shows a long vertical list of these citations. Preserve that behavior.
+
+========================
+PANIC PLAN
+========================
+
+Keep all current Panic Plan functionality.
+
+Redesign:
+- Priority Matrix
+- Tier 1 / Tier 2 / Tier 3
+- topics
+- timetable
+- exam countdown
+
+in brutalist cards.
+
+Use forest green for high-priority/high-yield information.
+
+Use pale green for medium priority.
+
+Use peach/orange accents for urgent information.
+
+========================
+BACKGROUND / DECORATION
+========================
+
+Add subtle brutalist decorative elements:
+- pixel grids
+- offset blocks
+- small geometric squares
+- partial corner blocks
+- vertical strips
+- dotted patterns
+
+Keep them subtle.
+
+They should enhance the design, not interfere with readability.
+
+========================
+ANIMATION
+========================
+
+Animations should be intentional and minimal.
+
+Use:
+- stepped progress
+- slight block movement
+- hard-shadow button press
+- subtle stage transitions
+- progress bar movement
+
+Avoid:
+- excessive floating animations
+- glowing neon effects
+- excessive blur
+- smooth corporate SaaS transitions everywhere
+
+The brutalist identity should remain strong even during loading.
+
+========================
+RESPONSIVENESS
+========================
+
+Make the redesigned interface fully responsive.
+
+Desktop:
+- wide cards
+- horizontal RAG pipeline
+
+Tablet:
+- compact cards
+- reduced spacing
+
+Mobile:
+- stack RAG stages vertically
+- keep all information readable
+- upload zone remains usable
+- buttons become full width where appropriate
+
+========================
+TECHNICAL REQUIREMENTS
+========================
+
+Preserve:
+- existing framework
+- existing components where practical
+- existing API integrations
+- existing RAG pipeline
+- existing file ingestion
+- existing vector/database logic
+- existing authentication/session logic
+- existing answer generation
+- existing source citation behavior
+
+Do not introduce unnecessary dependencies.
+
+Prefer reusable components such as:
+
+<BrutalistCard />
+<RagPipelineLoader />
+<RagStage />
+<UploadPanel />
+<SourceCitation />
+<PriorityMatrix />
+
+Keep the code clean and maintainable.
+
+========================
+OVERALL TARGET
+========================
+
+The final website should look like a polished Hacktoberfest project rather than a generic AI dashboard.
+
+VISUAL TARGET:
+
+Warm peach page
++
+forest-green brutalist components
++
+thick dark borders
++
+hard offset shadows
++
+editorial typography
++
+pixel decorations
++
+clear RAG pipeline visualization
++
+strong loading feedback
++
+clean academic productivity UX
+
+Most importantly, when the user asks a question and the RAG backend is working, they should immediately understand:
+
+“THE SYSTEM IS CURRENTLY UNDERSTANDING MY QUERY → RETRIEVING MY NOTES → GENERATING THE ANSWER → FINALISING SOURCES.”
+
+Use the attached screenshots as the visual reference for the existing application structure, but apply the new peach + green brutalist design consistently across the entire application.
+Avoid:
+- excessive floating animations
+- glowing neon effects
+- excessive blur
+- smooth corporate SaaS transitions everywhere
+
+The brutalist identity should remain strong even during loading.
+
+========================
+RESPONSIVENESS
+========================
+
+Make the redesigned interface fully responsive.
+
+Desktop:
+- wide cards
+- horizontal RAG pipeline
+
+Tablet:
+- compact cards
+- reduced spacing
+
+Mobile:
+- stack RAG stages vertically
+- keep all information readable
+- upload zone remains usable
+- buttons become full width where appropriate
+
+========================
+TECHNICAL REQUIREMENTS
+========================
+
+Preserve:
+- existing framework
+- existing components where practical
+- existing API integrations
+- existing RAG pipeline
+- existing file ingestion
+- existing vector/database logic
+- existing authentication/session logic
+- existing answer generation
+- existing source citation behavior
+
+Do not introduce unnecessary dependencies.
+
+Prefer reusable components such as:
+
+<BrutalistCard />
+<RagPipelineLoader />
+<RagStage />
+<UploadPanel />
+<SourceCitation />
+<PriorityMatrix />
+
+Keep the code clean and maintainable.
+
+========================
+OVERALL TARGET
+========================
+
+The final website should look like a polished Hacktoberfest project rather than a generic AI dashboard.
+
+VISUAL TARGET:
+
+Warm peach page
++
+forest-green brutalist components
++
+thick dark borders
++
+hard offset shadows
++
+editorial typography
++
+pixel decorations
++
+clear RAG pipeline visualization
++
+strong loading feedback
++
+clean academic productivity UX
+
+Most importantly, when the user asks a question and the RAG backend is working, they should immediately understand:
+
+“THE SYSTEM IS CURRENTLY UNDERSTANDING MY QUERY → RETRIEVING MY NOTES → GENERATING THE ANSWER → FINALISING SOURCES.”
+
+Use the attached screenshots as the visual reference for the existing application structure, but apply the new peach + green brutalist design consistently across the entire application.

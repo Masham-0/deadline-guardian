@@ -50,11 +50,11 @@ def get_embedding_model() -> Any:
 
 def chunk_text(
     docs: List[Dict[str, Any]],
-    chunk_size: int = 500,
-    chunk_overlap: int = 50
+    chunk_size: int = 150,
+    chunk_overlap: int = 30
 ) -> List[Dict[str, Any]]:
     """
-    Split extracted documents into chunks (~500 words with ~50 words overlap).
+    Split extracted documents into fine-grained paragraph-aware chunks (~150 words with ~30 words overlap).
     Preserves source and page metadata.
     """
     chunks: List[Dict[str, Any]] = []
@@ -64,35 +64,56 @@ def chunk_text(
         source = doc.get("source", "unknown")
         page = doc.get("page", 1)
 
-        words = text.split()
-        if not words:
+        if not text:
             continue
 
-        if len(words) <= chunk_size:
+        # First split by paragraph boundaries
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+
+        current_words: List[str] = []
+
+        for paragraph in paragraphs:
+            p_words = paragraph.split()
+            if not p_words:
+                continue
+
+            # If single paragraph is small, accumulate it
+            if len(current_words) + len(p_words) <= chunk_size:
+                current_words.extend(p_words)
+            else:
+                # Flush current accumulated chunk if any
+                if current_words:
+                    chunks.append({
+                        "text": " ".join(current_words),
+                        "source": source,
+                        "page": page
+                    })
+                    current_words = []
+
+                # If paragraph itself is larger than chunk_size, apply sliding window
+                if len(p_words) > chunk_size:
+                    start = 0
+                    step = chunk_size - chunk_overlap
+                    if step <= 0:
+                        step = chunk_size
+                    while start < len(p_words):
+                        end = start + chunk_size
+                        chunk_words = p_words[start:end]
+                        chunks.append({
+                            "text": " ".join(chunk_words),
+                            "source": source,
+                            "page": page
+                        })
+                        start += step
+                else:
+                    current_words = list(p_words)
+
+        if current_words:
             chunks.append({
-                "text": text,
+                "text": " ".join(current_words),
                 "source": source,
                 "page": page
             })
-            continue
-
-        start = 0
-        step = chunk_size - chunk_overlap
-        if step <= 0:
-            step = chunk_size
-
-        while start < len(words):
-            end = start + chunk_size
-            chunk_words = words[start:end]
-            chunk_str = " ".join(chunk_words)
-
-            chunks.append({
-                "text": chunk_str,
-                "source": source,
-                "page": page
-            })
-
-            start += step
 
     return chunks
 
@@ -121,6 +142,12 @@ def cleanup_expired_sessions(ttl_seconds: int = SESSION_TTL_SECONDS) -> None:
     ]
     for sid in expired:
         del _STORES[sid]
+
+
+def clear_store(session_id: str) -> None:
+    """Clear all stored chunks and embeddings for session_id."""
+    if session_id in _STORES:
+        del _STORES[session_id]
 
 
 def add_to_store(session_id: str, chunks: List[Dict[str, Any]]) -> int:
@@ -163,9 +190,10 @@ def add_to_store(session_id: str, chunks: List[Dict[str, Any]]) -> int:
     return len(_STORES[session_id]["chunks"])
 
 
-def retrieve(session_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
+def retrieve(session_id: str, query: str, k: int = 6, min_score: float = 0.35) -> List[Dict[str, Any]]:
     """
     Retrieve top k relevant chunks for query in session_id using cosine similarity.
+    Filters out chunks with similarity score below min_score to avoid out-of-context citations.
     """
     cleanup_expired_sessions()
 
@@ -184,9 +212,12 @@ def retrieve(session_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
 
     results = []
     for idx in top_k_indices:
-        item = dict(chunks[idx])
-        item["score"] = float(scores[idx])
-        results.append(item)
+        score_val = float(scores[idx])
+        # Filter out irrelevant chunks below similarity threshold unless no chunks pass
+        if score_val >= min_score or len(results) == 0 and score_val >= 0.20:
+            item = dict(chunks[idx])
+            item["score"] = score_val
+            results.append(item)
 
     return results
 
@@ -194,8 +225,8 @@ def retrieve(session_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
 def retrieve_multi_topic(
     session_id: str,
     query: str,
-    k_per_topic: int = 5,
-    max_total_chunks: int = 14
+    k_per_topic: int = 7,
+    max_total_chunks: int = 24
 ) -> List[Dict[str, Any]]:
     """
     Decomposes multi-line or multi-topic queries, performs vector retrieval for each sub-topic,
@@ -232,7 +263,7 @@ def retrieve_multi_topic(
 
 def retrieve_triage_context(
     session_id: str,
-    max_total_chunks: int = 25
+    max_total_chunks: int = 38
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Multi-pass triage retrieval:
@@ -264,14 +295,14 @@ def retrieve_triage_context(
 
     # Perform vector search over syllabus topics if syllabus chunks are few
     if not syllabus_chunks:
-        syllabus_chunks = retrieve(session_id, "syllabus exam questions core topics marks weightage", k=6)
+        syllabus_chunks = retrieve(session_id, "syllabus exam questions core topics marks weightage", k=10)
 
     # Broad sweep across all files: pick representative chunks evenly from each file
     selected_course_chunks = []
     seen_keys = set()
 
     # First add syllabus chunks
-    for c in syllabus_chunks[:8]:
+    for c in syllabus_chunks[:12]:
         key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
         seen_keys.add(key)
 
@@ -291,7 +322,7 @@ def retrieve_triage_context(
 
     # If space remains, add vector overview chunks
     if len(selected_course_chunks) + len(syllabus_chunks) < max_total_chunks:
-        extra_overview = retrieve(session_id, "overview chapters core concepts study plan", k=10)
+        extra_overview = retrieve(session_id, "overview chapters core concepts study plan", k=12)
         for c in extra_overview:
             key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
             if key not in seen_keys:
@@ -300,10 +331,10 @@ def retrieve_triage_context(
             if len(selected_course_chunks) + len(syllabus_chunks) >= max_total_chunks:
                 break
 
-    all_selected = (syllabus_chunks[:8] + selected_course_chunks)[:max_total_chunks]
+    all_selected = (syllabus_chunks[:12] + selected_course_chunks)[:max_total_chunks]
 
     return {
-        "syllabus_chunks": syllabus_chunks[:8],
+        "syllabus_chunks": syllabus_chunks[:12],
         "course_chunks": selected_course_chunks,
         "all_chunks": all_selected
     }
