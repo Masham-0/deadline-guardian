@@ -1,3 +1,4 @@
+import time
 import pickle
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -8,15 +9,15 @@ try:
 except ImportError:
     TextEmbedding = None
 
-# Global embedding model instance (lazy loaded)
 _EMBED_MODEL: Optional[Any] = None
 
 # In-memory vector store per session_id
-# Structure: { session_id: { "chunks": List[Dict], "embeddings": np.ndarray } }
+# Structure: { session_id: { "chunks": List[Dict], "embeddings": np.ndarray, "last_accessed": float } }
 _STORES: Dict[str, Dict[str, Any]] = {}
 
 MAX_CHUNKS_PER_SESSION = 1000
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+SESSION_TTL_SECONDS = 7200  # 2 hours
 
 
 def get_embedding_model() -> Any:
@@ -94,18 +95,35 @@ def embed_texts(texts: List[str]) -> np.ndarray:
     return _normalize(matrix)
 
 
+def cleanup_expired_sessions(ttl_seconds: int = SESSION_TTL_SECONDS) -> None:
+    """Remove sessions that have not been accessed within ttl_seconds."""
+    now = time.time()
+    expired = [
+        sid for sid, data in _STORES.items()
+        if now - data.get("last_accessed", now) > ttl_seconds
+    ]
+    for sid in expired:
+        del _STORES[sid]
+
+
 def add_to_store(session_id: str, chunks: List[Dict[str, Any]]) -> int:
     """
     Embed and store chunks in-memory for session_id.
     Caps chunks per session at MAX_CHUNKS_PER_SESSION.
-    Returns number of chunks currently in store.
     """
+    cleanup_expired_sessions()
+
     if not chunks:
         return len(_STORES.get(session_id, {}).get("chunks", []))
 
     if session_id not in _STORES:
-        _STORES[session_id] = {"chunks": [], "embeddings": np.empty((0, 384), dtype=np.float32)}
+        _STORES[session_id] = {
+            "chunks": [],
+            "embeddings": np.empty((0, 384), dtype=np.float32),
+            "last_accessed": time.time()
+        }
 
+    _STORES[session_id]["last_accessed"] = time.time()
     existing_chunks = _STORES[session_id]["chunks"]
     existing_embeddings = _STORES[session_id]["embeddings"]
 
@@ -132,15 +150,18 @@ def retrieve(session_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
     """
     Retrieve top k relevant chunks for query in session_id using cosine similarity.
     """
+    cleanup_expired_sessions()
+
     if session_id not in _STORES or not _STORES[session_id]["chunks"]:
         return []
 
     store = _STORES[session_id]
+    store["last_accessed"] = time.time()
     chunks = store["chunks"]
     embeddings = store["embeddings"]
 
-    query_vec = embed_texts([query]) # (1, dim)
-    scores = np.dot(embeddings, query_vec.T).squeeze(axis=1) # (N,)
+    query_vec = embed_texts([query])
+    scores = np.dot(embeddings, query_vec.T).squeeze(axis=1)
 
     top_k_indices = np.argsort(scores)[::-1][:min(k, len(scores))]
 
@@ -151,6 +172,26 @@ def retrieve(session_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
         results.append(item)
 
     return results
+
+
+def format_sources(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Format retrieved chunks into clean JSON source objects."""
+    sources = []
+    seen = set()
+    for c in chunks:
+        key = (c.get("source"), c.get("page"))
+        if key in seen:
+            continue
+        seen.add(key)
+        snippet = c.get("text", "")
+        if len(snippet) > 200:
+            snippet = snippet[:197] + "..."
+        sources.append({
+            "file": c.get("source", "unknown"),
+            "page": c.get("page", 1),
+            "snippet": snippet
+        })
+    return sources
 
 
 def save_store(filepath: str | Path = ".store.pkl") -> None:
