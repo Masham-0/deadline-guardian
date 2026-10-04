@@ -11,7 +11,7 @@ def format_context(chunks: List[Dict[str, Any]]) -> str:
         source = chunk.get("source", "unknown")
         page = chunk.get("page", 1)
         text = chunk.get("text", "").strip()
-        formatted_blocks.append(f"[{idx}] Source: {source}, Page: {page}\n{text}")
+        formatted_blocks.append(f"--- Document [{source} (Page {page})] ---\n{text}")
 
     return "\n\n".join(formatted_blocks)
 
@@ -21,16 +21,19 @@ def build_ask_prompt(query: str, chunks: List[Dict[str, Any]]) -> Tuple[str, str
     context_str = format_context(chunks)
 
     system_prompt = (
-        "You are Deadline Guardian, an AI study buddy for last-minute exam prep.\n"
-        "Your task is to answer the student's question relying STRICTLY and ONLY on the provided source context.\n"
+        "You are Deadline Guardian, an AI exam-prep study buddy.\n"
+        "Your task is to answer the student's question thoroughly using the information in the provided Context Documents.\n"
         "Rules:\n"
-        "1. You MUST cite your sources inline for key claims using the format [filename p.X] (e.g. [notes.pdf p.3]).\n"
-        "2. If the provided context does not contain sufficient information to answer the question, state clearly: "
-        "'The provided materials do not contain enough information to answer this question.'\n"
-        "3. Do NOT extrapolate, hallucinate, or use outside knowledge not present in the context."
+        "1. Cite your sources inline for key points using the format [filename p.X] (e.g. [ch6.pptx p.20]).\n"
+        "2. Use all relevant details and definitions found across the Context Documents.\n"
+        "3. Only if the Context Documents contain zero information about the question, state that the materials do not cover it."
     )
 
-    user_prompt = f"Context:\n{context_str}\n\nQuestion: {query}"
+    user_prompt = (
+        f"Question: {query}\n\n"
+        f"Context Documents:\n{context_str}\n\n"
+        f"Please provide a clear answer to the question '{query}' using the Context Documents above, including inline citations [filename p.X]:"
+    )
     return system_prompt, user_prompt
 
 
@@ -40,16 +43,15 @@ def build_condense_prompt(topic: str, chunks: List[Dict[str, Any]]) -> Tuple[str
 
     system_prompt = (
         "You are Deadline Guardian, an AI study buddy.\n"
-        "Create a concise, high-yield cheat sheet / summary for the requested topic strictly using ONLY the provided context.\n"
+        "Create a concise, high-yield cheat sheet / summary for the requested topic using the provided Context Documents.\n"
         "Rules:\n"
         "1. Include key concepts, definitions, formulas, and bullet points.\n"
-        "2. Include source citations [filename p.X] for key points.\n"
-        "3. If the context does not cover the requested topic, state clearly that the material is insufficient.\n"
-        "4. Do NOT use outside information."
+        "2. Include inline source citations [filename p.X] for key points.\n"
+        "3. Focus on high-yield exam information."
     )
 
     topic_label = topic if topic else "All Course Materials"
-    user_prompt = f"Context:\n{context_str}\n\nTopic to Condense: {topic_label}"
+    user_prompt = f"Topic to Condense: {topic_label}\n\nContext Documents:\n{context_str}\n\nGenerate the Cheat Sheet with citations:"
     return system_prompt, user_prompt
 
 
@@ -59,7 +61,7 @@ def build_quiz_prompt(topic: str, chunks: List[Dict[str, Any]], n_questions: int
 
     system_prompt = (
         f"You are Deadline Guardian. Generate a quiz of exactly {n_questions} multiple-choice questions "
-        "based strictly ONLY on the provided context.\n"
+        "based on the provided Context Documents.\n"
         "CRITICAL: Output ONLY raw valid JSON (a JSON array of objects). Do NOT wrap in markdown code blocks like ```json.\n"
         "Each object in the JSON list MUST follow this exact schema:\n"
         "[\n"
@@ -69,12 +71,11 @@ def build_quiz_prompt(topic: str, chunks: List[Dict[str, Any]], n_questions: int
         '    "answer": "A",\n'
         '    "explanation": "Why this is correct (citing [filename p.X])"\n'
         "  }\n"
-        "]\n"
-        "If the context is insufficient to create questions, return an empty JSON array `[]`."
+        "]"
     )
 
     topic_label = topic if topic else "General Content"
-    user_prompt = f"Context:\n{context_str}\n\nQuiz Topic: {topic_label}\nNumber of Questions: {n_questions}"
+    user_prompt = f"Quiz Topic: {topic_label}\nNumber of Questions: {n_questions}\n\nContext Documents:\n{context_str}\n\nGenerate raw JSON quiz array:"
     return system_prompt, user_prompt
 
 
@@ -84,7 +85,7 @@ def build_triage_prompt(hours_left: float, chunks: List[Dict[str, Any]]) -> Tupl
 
     system_prompt = (
         f"You are Deadline Guardian. The student has only {hours_left} hours left before their exam!\n"
-        "Construct a realistic, high-efficiency, prioritized study plan based strictly ONLY on the provided course material context.\n"
+        "Construct a realistic, high-efficiency, prioritized study plan based on the provided Context Documents.\n"
         "Structure your output as:\n"
         "1. Executive Priority Matrix (Must-Know Core Concepts vs Nice-to-Know Detail)\n"
         "2. Hour-by-Hour Actionable Timetable\n"
@@ -92,5 +93,5 @@ def build_triage_prompt(hours_left: float, chunks: List[Dict[str, Any]]) -> Tupl
         "Include source citations [filename p.X] for referenced topics."
     )
 
-    user_prompt = f"Hours Left: {hours_left} hours\n\nAvailable Materials Context:\n{context_str}"
+    user_prompt = f"Hours Left: {hours_left} hours\n\nContext Documents:\n{context_str}\n\nGenerate the Triage Study Timetable:"
     return system_prompt, user_prompt
