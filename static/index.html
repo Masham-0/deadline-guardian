@@ -42,7 +42,7 @@
     <section class="upload-card">
       <div class="drop-zone" id="dropZone">
         <span class="drop-icon">📁</span>
-        <div class="drop-title">Drag & Drop your course notes & photos here</div>
+        <div class="drop-title">Drag & Drop your course notes, photos & past papers here</div>
         <div class="drop-subtitle">Supports PDF, PPTX, TXT, MD, JPG, PNG, WEBP (Up to 10 files, 10MB max each)</div>
         <input type="file" id="fileInput" multiple accept=".pdf,.pptx,.txt,.md,.jpg,.jpeg,.png,.webp" style="display: none;">
       </div>
@@ -114,6 +114,9 @@
         <div class="form-group">
           <label class="form-label" for="triageHours">Hours Remaining Before Exam:</label>
           <input type="number" class="form-input" id="triageHours" value="6" min="0.5" max="72" step="0.5">
+          <p style="font-size: 0.8rem; color: var(--accent-cyan); margin-top: 0.4rem;">
+            💡 <strong>Pro Tip:</strong> Uploading your Syllabus (`syllabus.png`/`.pdf`) or Past Exam Papers (`pyq.pdf`/`exam.txt`) enables AI-driven exam weightage priority mining!
+          </p>
         </div>
         <button class="btn-primary" id="triageBtn">
           <span>Build Panic Timetable</span>

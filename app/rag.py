@@ -206,16 +206,12 @@ def retrieve_multi_topic(
     if session_id not in _STORES or not _STORES[session_id]["chunks"]:
         return []
 
-    # Decompose query into sub-topics by line breaks, question marks, or bullet points
     raw_sub_queries = [line.strip() for line in re.split(r'[\n;?]+', query) if line.strip()]
-    
-    # Filter out extremely short connector words
     sub_queries = [q for q in raw_sub_queries if len(q) >= 3]
-    
+
     if not sub_queries:
         sub_queries = [query.strip()]
 
-    # Also include the overall query as a baseline
     if len(sub_queries) > 1 and query.strip() not in sub_queries:
         sub_queries.append(query.strip())
 
@@ -225,16 +221,92 @@ def retrieve_multi_topic(
     for sq in sub_queries:
         top_chunks = retrieve(session_id, sq, k=k_per_topic)
         for c in top_chunks:
-            # Deduplicate by (source, page, snippet hash)
             key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
             if key not in seen_keys:
                 seen_keys.add(key)
                 combined_chunks.append(c)
 
-    # Sort combined chunks by similarity score descending
     combined_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
-
     return combined_chunks[:max_total_chunks]
+
+
+def retrieve_triage_context(
+    session_id: str,
+    max_total_chunks: int = 25
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Multi-pass triage retrieval:
+    1. Detects & extracts syllabus / PYQ chunks (files containing syllabus, pyq, exam, question, paper, pattern).
+    2. Sweeps across all uploaded slide decks/files to construct a full 100% course overview map.
+    """
+    cleanup_expired_sessions()
+
+    if session_id not in _STORES or not _STORES[session_id]["chunks"]:
+        return {"syllabus_chunks": [], "course_chunks": [], "all_chunks": []}
+
+    store = _STORES[session_id]
+    all_chunks = store["chunks"]
+
+    syllabus_keywords = ("syllabus", "pyq", "exam", "question", "paper", "pattern", "test", "midterm", "final")
+
+    syllabus_chunks = []
+    course_chunks_by_file: Dict[str, List[Dict[str, Any]]] = {}
+
+    for c in all_chunks:
+        source_lower = c.get("source", "").lower()
+        if any(kw in source_lower for kw in syllabus_keywords):
+            syllabus_chunks.append(c)
+        else:
+            filename = c.get("source", "unknown")
+            if filename not in course_chunks_by_file:
+                course_chunks_by_file[filename] = []
+            course_chunks_by_file[filename].append(c)
+
+    # Perform vector search over syllabus topics if syllabus chunks are few
+    if not syllabus_chunks:
+        syllabus_chunks = retrieve(session_id, "syllabus exam questions core topics marks weightage", k=6)
+
+    # Broad sweep across all files: pick representative chunks evenly from each file
+    selected_course_chunks = []
+    seen_keys = set()
+
+    # First add syllabus chunks
+    for c in syllabus_chunks[:8]:
+        key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
+        seen_keys.add(key)
+
+    # Interleave chunks from each file evenly
+    if course_chunks_by_file:
+        max_per_file = max(1, (max_total_chunks - len(seen_keys)) // len(course_chunks_by_file) + 1)
+        for fname, fchunks in course_chunks_by_file.items():
+            for c in fchunks[:max_per_file]:
+                key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    selected_course_chunks.append(c)
+                if len(selected_course_chunks) + len(syllabus_chunks) >= max_total_chunks:
+                    break
+            if len(selected_course_chunks) + len(syllabus_chunks) >= max_total_chunks:
+                break
+
+    # If space remains, add vector overview chunks
+    if len(selected_course_chunks) + len(syllabus_chunks) < max_total_chunks:
+        extra_overview = retrieve(session_id, "overview chapters core concepts study plan", k=10)
+        for c in extra_overview:
+            key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                selected_course_chunks.append(c)
+            if len(selected_course_chunks) + len(syllabus_chunks) >= max_total_chunks:
+                break
+
+    all_selected = (syllabus_chunks[:8] + selected_course_chunks)[:max_total_chunks]
+
+    return {
+        "syllabus_chunks": syllabus_chunks[:8],
+        "course_chunks": selected_course_chunks,
+        "all_chunks": all_selected
+    }
 
 
 def format_sources(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

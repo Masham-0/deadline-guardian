@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from app.ingest import extract_text, SUPPORTED_EXTENSIONS
-from app.rag import chunk_text, add_to_store, retrieve, retrieve_multi_topic, format_sources
+from app.rag import chunk_text, add_to_store, retrieve, retrieve_multi_topic, retrieve_triage_context, format_sources
 from app import prompts
 from app.llm import chat, get_llm_config
 
@@ -232,17 +232,17 @@ def ask_question(req: AskRequest):
 
 @app.post("/triage")
 def deadline_triage(req: TriageRequest):
-    chunks = retrieve_multi_topic(req.session_id, "syllabus exam core topics overview important timetable", max_total_chunks=14)
+    triage_data = retrieve_triage_context(req.session_id, max_total_chunks=25)
 
-    if not chunks:
+    if not triage_data.get("all_chunks"):
         raise HTTPException(
             status_code=404,
             detail=f"No context found for session '{req.session_id}'. Please upload study materials first."
         )
 
-    sys_prompt, user_prompt = prompts.build_triage_prompt(req.hours_left or 6.0, chunks)
+    sys_prompt, user_prompt = prompts.build_triage_prompt(req.hours_left or 6.0, triage_data)
     answer = chat(sys_prompt, user_prompt)
-    sources = format_sources(chunks)
+    sources = format_sources(triage_data.get("all_chunks", []))
 
     return {"answer": answer, "sources": sources}
 

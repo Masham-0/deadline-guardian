@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from app.ingest import ingest_directory, extract_text, SUPPORTED_EXTENSIONS
-from app.rag import chunk_text, add_to_store, retrieve, retrieve_multi_topic, save_store, load_store
+from app.rag import chunk_text, add_to_store, retrieve, retrieve_multi_topic, retrieve_triage_context, save_store, load_store
 from app.llm import chat
 from app import prompts
 
@@ -55,13 +55,13 @@ def handle_ask(args):
 
 def handle_triage(args):
     load_store(STORE_FILE)
-    chunks = retrieve_multi_topic(args.session, "syllabus exam core topics overview important", max_total_chunks=args.k)
+    triage_data = retrieve_triage_context(args.session, max_total_chunks=args.k)
 
-    if not chunks:
+    if not triage_data.get("all_chunks"):
         print(f"No stored material found for session '{args.session}'. Run `python cli.py ingest <folder>` first.")
         return
 
-    sys_prompt, user_prompt = prompts.build_triage_prompt(args.hours, chunks)
+    sys_prompt, user_prompt = prompts.build_triage_prompt(args.hours, triage_data)
     print(f"\n--- Deadline Triage Plan ({args.hours} Hours Remaining) ---")
     response = chat(sys_prompt, user_prompt)
     print(response)
@@ -92,7 +92,7 @@ def main():
     parser_triage = subparsers.add_parser("triage", help="Generate a prioritized study timetable")
     parser_triage.add_argument("--hours", type=float, default=6.0, help="Hours left before exam")
     parser_triage.add_argument("--session", default="default", help="Session ID")
-    parser_triage.add_argument("--k", type=int, default=14, help="Number of retrieved context chunks")
+    parser_triage.add_argument("--k", type=int, default=25, help="Number of retrieved context chunks")
     parser_triage.set_defaults(func=handle_triage)
 
     args = parser.parse_args()
