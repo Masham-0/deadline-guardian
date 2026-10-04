@@ -36,12 +36,20 @@
     <section class="upload-card">
       <div class="drop-zone" id="dropZone">
         <span class="drop-icon">📁</span>
-        <div class="drop-title">Drag & Drop your course notes here</div>
-        <div class="drop-subtitle">Supports PDF, PPTX, TXT, and MD (Up to 10 files, 10MB max each)</div>
-        <input type="file" id="fileInput" multiple accept=".pdf,.pptx,.txt,.md" style="display: none;">
+        <div class="drop-title">Drag & Drop your course notes & photos here</div>
+        <div class="drop-subtitle">Supports PDF, PPTX, TXT, MD, JPG, PNG, WEBP (Up to 10 files, 10MB max each)</div>
+        <input type="file" id="fileInput" multiple accept=".pdf,.pptx,.txt,.md,.jpg,.jpeg,.png,.webp" style="display: none;">
       </div>
 
       <div class="file-list" id="fileList"></div>
+
+      <!-- Upload Progress Bar -->
+      <div id="uploadProgress" class="progress-bar-container" style="display: none; margin-top: 1rem;">
+        <div id="progressText" class="progress-text">Reading page 1...</div>
+        <div class="progress-bar-track">
+          <div id="progressBar" class="progress-bar-fill"></div>
+        </div>
+      </div>
 
       <div class="upload-actions">
         <button class="btn-primary" id="uploadBtn" disabled>
@@ -50,6 +58,20 @@
       </div>
 
       <div id="uploadNotice" style="margin-top: 0.75rem; font-size: 0.85rem; display: none;"></div>
+    </section>
+
+    <!-- Transcribed Text Confirmation Box (for vision / handwritten notes) -->
+    <section id="transcriptionConfirmCard" class="panel-card" style="display: none; margin-bottom: 2rem;">
+      <h3 style="margin-bottom: 0.4rem; color: #ffffff;">✏️ Review & Edit Transcribed Notes</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        AI transcribed text from your photos/diagrams. Review or edit the text below before confirming to index into your RAG study store.
+      </p>
+      <div id="transcriptionList" style="display: grid; gap: 1rem;"></div>
+      <div style="margin-top: 1.25rem; text-align: right;">
+        <button class="btn-primary" id="confirmTextBtn">
+          <span>Confirm & Index Notes</span>
+        </button>
+      </div>
     </section>
 
     <!-- Navigation Tabs -->

@@ -1,7 +1,7 @@
 import os
+import base64
 from dotenv import load_dotenv
 
-# Load environment variables from .env if available
 load_dotenv()
 
 try:
@@ -29,8 +29,6 @@ def chat(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
         raise ImportError("openai package is required. Run `pip install openai`.")
 
     base_url, api_key, model = get_llm_config()
-
-    # Provide a placeholder key if none set (e.g. for Ollama which ignores keys)
     effective_api_key = api_key if api_key else "ollama-or-local"
 
     try:
@@ -65,3 +63,64 @@ def chat(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
         return f"[LLM Error] API Error ({e.code}): {e.message}"
     except Exception as e:
         return f"[LLM Error] Unexpected error while calling LLM: {str(e)}"
+
+
+def describe_image(image_bytes: bytes, mime_type: str = "image/jpeg", mode: str = "FULL", timeout: float = 60.0) -> str:
+    """
+    Send image bytes to vision-capable LLM model via OpenAI-compatible image_url format.
+    Modes:
+      FULL: Transcribe all text in image preserving structure.
+      FIGURES: Describe diagrams, charts, tables, or figures.
+    """
+    if OpenAI is None:
+        raise ImportError("openai package is required. Run `pip install openai`.")
+
+    base_url, api_key, model = get_llm_config()
+    effective_api_key = api_key if api_key else "ollama-or-local"
+
+    if mode.upper() == "FIGURES":
+        prompt_text = (
+            "Describe each diagram, chart, table or figure and transcribe any text inside it. "
+            "Do not repeat ordinary body text."
+        )
+    else:
+        prompt_text = (
+            "Transcribe all text in this image exactly, preserving structure "
+            "(headings, bullets, equations, tables). Mark unreadable parts as [illegible]. "
+            "Do not summarize or add anything."
+        )
+
+    b64_str = base64.b64encode(image_bytes).decode("utf-8")
+    data_url = f"data:{mime_type};base64,{b64_str}"
+
+    try:
+        client = OpenAI(
+            base_url=base_url,
+            api_key=effective_api_key,
+            timeout=timeout
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {"type": "image_url", "image_url": {"url": data_url}}
+                    ]
+                }
+            ],
+            temperature=0.1
+        )
+
+        if response.choices and len(response.choices) > 0:
+            return (response.choices[0].message.content or "").strip()
+        return "[Vision Error] No response returned from vision model."
+
+    except openai.BadRequestError as e:
+        return f"[Vision Error] The model '{model}' may not support vision/image input: {e}"
+    except openai.AuthenticationError as e:
+        return f"[LLM Error] Authentication failed (401). Check LLM_API_KEY: {e}"
+    except Exception as e:
+        return f"[Vision Error] Could not process image: {str(e)}"

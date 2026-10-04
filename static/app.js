@@ -16,11 +16,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // File Upload State
   let selectedFiles = [];
+  let statusPollTimer = null;
+
   const dropZone = document.getElementById("dropZone");
   const fileInput = document.getElementById("fileInput");
   const fileList = document.getElementById("fileList");
   const uploadBtn = document.getElementById("uploadBtn");
   const uploadNotice = document.getElementById("uploadNotice");
+  const uploadProgress = document.getElementById("uploadProgress");
+  const progressText = document.getElementById("progressText");
+
+  const confirmCard = document.getElementById("transcriptionConfirmCard");
+  const transcriptionList = document.getElementById("transcriptionList");
+  const confirmTextBtn = document.getElementById("confirmTextBtn");
 
   // Drag & Drop Handlers
   dropZone.addEventListener("click", () => fileInput.click());
@@ -49,7 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function handleFiles(files) {
-    const allowedExts = [".pdf", ".pptx", ".txt", ".md"];
+    const allowedExts = [".pdf", ".pptx", ".txt", ".md", ".jpg", ".jpeg", ".png", ".webp"];
     let warnings = [];
 
     files.forEach((file) => {
@@ -103,11 +111,39 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadBtn.disabled = selectedFiles.length === 0;
   }
 
+  function startStatusPolling() {
+    if (uploadProgress) uploadProgress.style.display = "block";
+    statusPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`/status/${sessionId}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (progressText && data.message) {
+            progressText.textContent = data.message;
+          }
+        }
+      } catch (e) {
+        // ignore polling errors
+      }
+    }, 500);
+  }
+
+  function stopStatusPolling() {
+    if (statusPollTimer) {
+      clearInterval(statusPollTimer);
+      statusPollTimer = null;
+    }
+    if (uploadProgress) uploadProgress.style.display = "none";
+  }
+
   uploadBtn.addEventListener("click", async () => {
     if (selectedFiles.length === 0) return;
 
-    setLoading(uploadBtn, true, "Uploading & Embedding...");
+    setLoading(uploadBtn, true, "Processing & Reading...");
     hideNotice();
+    if (confirmCard) confirmCard.style.display = "none";
+
+    startStatusPolling();
 
     const formData = new FormData();
     formData.append("session_id", sessionId);
@@ -124,18 +160,84 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(data.detail || "Upload failed");
       }
 
-      showNotice(
-        `Successfully ingested ${data.files_processed} files (${data.chunks_created} new chunks). Total stored: ${data.total_chunks} chunks.`,
-        "success"
-      );
+      stopStatusPolling();
+
+      const countStr = data.files_processed === 1 ? "1 file" : `${data.files_processed} files`;
+
+      if (data.requires_confirmation && data.transcriptions && data.transcriptions.length > 0) {
+        showNotice(
+          `Successfully processed ${countStr}. AI transcribed ${data.transcriptions.length} items needing your review below.`,
+          "success"
+        );
+        renderTranscriptionReview(data.transcriptions);
+      } else {
+        showNotice(
+          `Successfully ingested ${countStr} (${data.chunks_created} new chunks). Total stored: ${data.total_chunks} chunks.`,
+          "success"
+        );
+      }
+
       selectedFiles = [];
       renderFileList();
     } catch (err) {
+      stopStatusPolling();
       showNotice(`Upload Error: ${err.message}`, "danger");
     } finally {
       setLoading(uploadBtn, false, "Upload & Process Notes");
     }
   });
+
+  function renderTranscriptionReview(transcriptions) {
+    if (!confirmCard || !transcriptionList) return;
+    transcriptionList.innerHTML = "";
+
+    transcriptions.forEach((item, idx) => {
+      const box = document.createElement("div");
+      box.className = "transcription-box";
+      box.innerHTML = `
+        <div class="transcription-title">📄 Source: ${escapeHtml(item.source)} (Page/Type: ${escapeHtml(item.page)})</div>
+        <textarea class="transcription-textarea" data-source="${escapeHtml(item.source)}" data-page="${escapeHtml(item.page)}">${escapeHtml(item.text)}</textarea>
+      `;
+      transcriptionList.appendChild(box);
+    });
+
+    confirmCard.style.display = "block";
+  }
+
+  if (confirmTextBtn) {
+    confirmTextBtn.addEventListener("click", async () => {
+      const textareas = transcriptionList.querySelectorAll(".transcription-textarea");
+      const items = [];
+
+      textareas.forEach((ta) => {
+        items.push({
+          text: ta.value.trim(),
+          source: ta.getAttribute("data-source"),
+          page: ta.getAttribute("data-page")
+        });
+      });
+
+      setLoading(confirmTextBtn, true, "Indexing...");
+
+      try {
+        const res = await fetch("/confirm_text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, items: items })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Confirmation failed");
+
+        showNotice(`Confirmed & indexed ${data.chunks_created} chunks into RAG store! Total stored: ${data.total_chunks} chunks.`, "success");
+        confirmCard.style.display = "none";
+      } catch (err) {
+        alert(`Error confirming text: ${err.message}`);
+      } finally {
+        setLoading(confirmTextBtn, false, "Confirm & Index Notes");
+      }
+    });
+  }
 
   // Tab Navigation
   const tabBtns = document.querySelectorAll(".tab-btn");
@@ -390,7 +492,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       container.appendChild(card);
 
-      // Attach option button click handlers
       const optBtns = card.querySelectorAll(".quiz-opt-btn");
       const expEl = card.querySelector(".quiz-explanation");
       const correctAnswer = (q.answer || "A").trim().toUpperCase();
@@ -404,7 +505,6 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.classList.add("correct");
           } else {
             btn.classList.add("incorrect");
-            // Highlight the correct button
             optBtns.forEach((b) => {
               if (b.getAttribute("data-letter") === correctAnswer) {
                 b.classList.add("correct");

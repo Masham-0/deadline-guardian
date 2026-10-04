@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -27,6 +27,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# In-memory status job tracker per session_id
+_UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 # Pydantic Request Models
@@ -51,6 +55,17 @@ class TriageRequest(BaseModel):
     hours_left: Optional[float] = Field(default=6.0, gt=0)
 
 
+class TranscribedItem(BaseModel):
+    text: str
+    source: str
+    page: Any
+
+
+class ConfirmTextRequest(BaseModel):
+    session_id: str
+    items: List[TranscribedItem]
+
+
 MAX_FILES = 10
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
@@ -64,6 +79,16 @@ def health_check():
 def get_config():
     _, _, model = get_llm_config()
     return {"model": model}
+
+
+@app.get("/status/{session_id}")
+def get_status(session_id: str):
+    job = _UPLOAD_JOBS.get(session_id, {
+        "status": "idle",
+        "message": "No active processing job.",
+        "skipped": []
+    })
+    return job
 
 
 @app.post("/upload")
@@ -83,6 +108,19 @@ async def upload_files(
     if not session_id or not session_id.strip():
         session_id = str(uuid.uuid4())
 
+    _UPLOAD_JOBS[session_id] = {
+        "status": "processing",
+        "message": "Preparing files for processing...",
+        "skipped": [],
+        "transcriptions": []
+    }
+
+    def progress_callback(msg: str):
+        if session_id in _UPLOAD_JOBS:
+            _UPLOAD_JOBS[session_id]["message"] = msg
+            if "Skipping" in msg:
+                _UPLOAD_JOBS[session_id]["skipped"].append(msg)
+
     all_extracted: List[Dict[str, Any]] = []
     processed_count = 0
 
@@ -92,6 +130,7 @@ async def upload_files(
             ext = Path(filename).suffix.lower()
 
             if ext not in SUPPORTED_EXTENSIONS:
+                _UPLOAD_JOBS[session_id]["status"] = "error"
                 raise HTTPException(
                     status_code=400,
                     detail=f"Unsupported file type '{ext}' for file '{filename}'. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
@@ -99,6 +138,7 @@ async def upload_files(
 
             contents = await file.read()
             if len(contents) > MAX_FILE_SIZE:
+                _UPLOAD_JOBS[session_id]["status"] = "error"
                 raise HTTPException(
                     status_code=400,
                     detail=f"File '{filename}' exceeds maximum size limit of 10MB."
@@ -108,24 +148,75 @@ async def upload_files(
             temp_file_path.write_bytes(contents)
 
             try:
-                extracted = extract_text(temp_file_path)
+                extracted = extract_text(temp_file_path, progress_callback=progress_callback)
                 all_extracted.extend(extracted)
                 processed_count += 1
             except Exception as e:
+                _UPLOAD_JOBS[session_id]["status"] = "error"
                 raise HTTPException(
                     status_code=400,
                     detail=f"Failed to process '{filename}': {str(e)}"
                 )
 
     if not all_extracted:
+        _UPLOAD_JOBS[session_id]["status"] = "error"
         raise HTTPException(status_code=400, detail="No readable text found in uploaded files.")
 
-    chunks = chunk_text(all_extracted, chunk_size=500, chunk_overlap=50)
-    total_chunks = add_to_store(session_id, chunks)
+    # Separate vision items (handwritten/diagram transcriptions needing review)
+    vision_items = [item for item in all_extracted if item.get("is_vision")]
+    text_items = [item for item in all_extracted if not item.get("is_vision")]
+
+    # Immediately index standard text items
+    text_chunks_count = 0
+    if text_items:
+        chunks = chunk_text(text_items, chunk_size=500, chunk_overlap=50)
+        text_chunks_count = len(chunks)
+        add_to_store(session_id, chunks)
+
+    if vision_items:
+        _UPLOAD_JOBS[session_id]["status"] = "needs_confirmation"
+        _UPLOAD_JOBS[session_id]["message"] = "Transcriptions ready for your review."
+        _UPLOAD_JOBS[session_id]["transcriptions"] = vision_items
+
+        return {
+            "session_id": session_id,
+            "requires_confirmation": True,
+            "transcriptions": vision_items,
+            "text_chunks_created": text_chunks_count,
+            "files_processed": processed_count,
+            "skipped": _UPLOAD_JOBS[session_id]["skipped"]
+        }
+
+    # No vision items -> indexing complete
+    total_chunks = add_to_store(session_id, [])
+    _UPLOAD_JOBS[session_id]["status"] = "complete"
+    _UPLOAD_JOBS[session_id]["message"] = "Ingestion complete."
 
     return {
         "session_id": session_id,
+        "requires_confirmation": False,
         "files_processed": processed_count,
+        "chunks_created": text_chunks_count,
+        "total_chunks": total_chunks,
+        "skipped": _UPLOAD_JOBS[session_id]["skipped"]
+    }
+
+
+@app.post("/confirm_text")
+def confirm_transcription_text(req: ConfirmTextRequest):
+    if not req.items:
+        raise HTTPException(status_code=400, detail="No transcribed items provided for confirmation.")
+
+    docs = [{"text": item.text, "source": item.source, "page": item.page} for item in req.items]
+    chunks = chunk_text(docs, chunk_size=500, chunk_overlap=50)
+    total_chunks = add_to_store(req.session_id, chunks)
+
+    if req.session_id in _UPLOAD_JOBS:
+        _UPLOAD_JOBS[req.session_id]["status"] = "complete"
+        _UPLOAD_JOBS[req.session_id]["message"] = "Confirmed transcriptions indexed successfully."
+
+    return {
+        "session_id": req.session_id,
         "chunks_created": len(chunks),
         "total_chunks": total_chunks
     }
@@ -210,7 +301,6 @@ def generate_quiz(req: QuizRequest):
         parsed_quiz = parse_quiz_json(raw_answer)
 
     if parsed_quiz is None:
-        # Fallback payload structure if parsing retries fail
         parsed_quiz = [{
             "question": "Could not format quiz as JSON.",
             "options": ["A) View raw answer"],

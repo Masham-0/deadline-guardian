@@ -210,6 +210,68 @@ body {
   gap: 1rem;
 }
 
+/* Progress Bar Container */
+.progress-bar-container {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 1rem;
+}
+
+.progress-text {
+  font-size: 0.85rem;
+  color: var(--accent-cyan);
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.progress-bar-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--accent-cyan));
+  animation: pulseProgress 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulseProgress {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+/* Transcription Review Boxes */
+.transcription-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+}
+
+.transcription-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  margin-bottom: 0.5rem;
+}
+
+.transcription-textarea {
+  width: 100%;
+  min-height: 100px;
+  background: rgba(18, 24, 38, 0.8);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
 /* Primary Button */
 .btn-primary {
   background: linear-gradient(135deg, var(--primary), var(--accent-purple));
