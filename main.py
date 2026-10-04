@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from app.ingest import extract_text, SUPPORTED_EXTENSIONS
-from app.rag import chunk_text, add_to_store, retrieve, format_sources
+from app.rag import chunk_text, add_to_store, retrieve, retrieve_multi_topic, format_sources
 from app import prompts
 from app.llm import chat, get_llm_config
 
@@ -216,7 +216,7 @@ def ask_question(req: AskRequest):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    chunks = retrieve(req.session_id, req.query, k=6)
+    chunks = retrieve_multi_topic(req.session_id, req.query, max_total_chunks=14)
     if not chunks:
         raise HTTPException(
             status_code=404,
@@ -232,7 +232,7 @@ def ask_question(req: AskRequest):
 
 @app.post("/triage")
 def deadline_triage(req: TriageRequest):
-    chunks = retrieve(req.session_id, "syllabus exam core topics overview important timetable", k=10)
+    chunks = retrieve_multi_topic(req.session_id, "syllabus exam core topics overview important timetable", max_total_chunks=14)
 
     if not chunks:
         raise HTTPException(

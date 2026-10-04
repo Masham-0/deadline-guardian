@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import pickle
 from pathlib import Path
@@ -188,6 +189,52 @@ def retrieve(session_id: str, query: str, k: int = 6) -> List[Dict[str, Any]]:
         results.append(item)
 
     return results
+
+
+def retrieve_multi_topic(
+    session_id: str,
+    query: str,
+    k_per_topic: int = 5,
+    max_total_chunks: int = 14
+) -> List[Dict[str, Any]]:
+    """
+    Decomposes multi-line or multi-topic queries, performs vector retrieval for each sub-topic,
+    and merges/deduplicates top chunks so that EVERY sub-topic gets sufficient context.
+    """
+    cleanup_expired_sessions()
+
+    if session_id not in _STORES or not _STORES[session_id]["chunks"]:
+        return []
+
+    # Decompose query into sub-topics by line breaks, question marks, or bullet points
+    raw_sub_queries = [line.strip() for line in re.split(r'[\n;?]+', query) if line.strip()]
+    
+    # Filter out extremely short connector words
+    sub_queries = [q for q in raw_sub_queries if len(q) >= 3]
+    
+    if not sub_queries:
+        sub_queries = [query.strip()]
+
+    # Also include the overall query as a baseline
+    if len(sub_queries) > 1 and query.strip() not in sub_queries:
+        sub_queries.append(query.strip())
+
+    seen_keys = set()
+    combined_chunks = []
+
+    for sq in sub_queries:
+        top_chunks = retrieve(session_id, sq, k=k_per_topic)
+        for c in top_chunks:
+            # Deduplicate by (source, page, snippet hash)
+            key = (c.get("source"), c.get("page"), hash(c.get("text", "")[:100]))
+            if key not in seen_keys:
+                seen_keys.add(key)
+                combined_chunks.append(c)
+
+    # Sort combined chunks by similarity score descending
+    combined_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+    return combined_chunks[:max_total_chunks]
 
 
 def format_sources(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

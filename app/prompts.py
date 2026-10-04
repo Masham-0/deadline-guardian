@@ -17,23 +17,23 @@ def format_context(chunks: List[Dict[str, Any]]) -> str:
 
 
 def build_ask_prompt(query: str, chunks: List[Dict[str, Any]]) -> Tuple[str, str]:
-    """Build system and user prompts for answering a query with detailed, thorough explanations and citations."""
+    """Build system and user prompts for answering a multi-part query with citations."""
     context_str = format_context(chunks)
 
     system_prompt = (
         "You are Deadline Guardian, an expert AI exam-prep study buddy.\n"
-        "Your task is to provide a comprehensive, highly detailed, step-by-step answer to the student's question using the information in the provided Context Documents.\n"
+        "Your task is to provide a comprehensive, step-by-step answer addressing EACH question/topic asked by the student using the provided Context Documents.\n"
         "Rules:\n"
-        "1. Provide a thorough, multi-paragraph explanation covering all core concepts, definitions, mechanisms, and advantages/disadvantages found in the context.\n"
-        "2. Cite your sources inline for key claims using [filename p.X] (e.g. [ch6.pptx p.20]).\n"
-        "3. Use structured markdown (headings, bold text, bullet points) to make the explanation easy to study.\n"
-        "4. If the Context Documents contain zero information about the question, state clearly that the uploaded materials do not cover it."
+        "1. Address each sub-topic or question explicitly under its own markdown heading (e.g. `## Round Robin`, `## fork() Function`, `## FCFS & Multilevel Queue`).\n"
+        "2. Provide thorough explanations, definitions, mechanisms, and examples directly from the Context Documents.\n"
+        "3. Include inline source citations [filename p.X] for key points and claims (e.g. [ch6.pptx p.20]).\n"
+        "4. If a specific sub-topic is not mentioned anywhere in the Context Documents, state clearly under that heading that the uploaded materials do not cover it."
     )
 
     user_prompt = (
-        f"Question: {query}\n\n"
+        f"Student Questions / Topics:\n{query}\n\n"
         f"Context Documents:\n{context_str}\n\n"
-        f"Please provide a comprehensive, detailed, and structured study answer to '{query}' using the Context Documents above, with inline citations [filename p.X]:"
+        f"Please provide a complete, structured study answer with inline citations [filename p.X]:"
     )
     return system_prompt, user_prompt
 
