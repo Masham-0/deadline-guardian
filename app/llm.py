@@ -14,9 +14,9 @@ except ImportError:
 
 def get_llm_config() -> tuple[str, str, str]:
     """Retrieve LLM parameters from environment variables."""
-    base_url = os.getenv("LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/").strip()
+    base_url = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1").strip()
     api_key = os.getenv("LLM_API_KEY", "").strip()
-    model = os.getenv("LLM_MODEL", "gemini-1.5-flash").strip()
+    model = os.getenv("LLM_MODEL", "gemma-2-9b-it").strip()
     return base_url, api_key, model
 
 

@@ -13,7 +13,7 @@ services:
       - key: LLM_API_KEY
         sync: false
       - key: LLM_MODEL
-        value: gemini-1.5-flash
+        value: gemma-2-9b-it
       - key: HF_TOKEN
         sync: false
       - key: FASTEMBED_CACHE_DIR
