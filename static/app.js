@@ -547,6 +547,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Clear session vector store in Qdrant when tab closes/unloads
+  window.addEventListener("beforeunload", () => {
+    if (sessionId) {
+      navigator.sendBeacon(`/clear/${sessionId}`);
+    }
+  });
+
   // Tab 1: Ask
   const askBtn = document.getElementById("askBtn");
   const askInput = document.getElementById("askInput");

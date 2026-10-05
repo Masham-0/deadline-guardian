@@ -208,6 +208,22 @@ def get_config():
         }
 
 
+@app.post("/clear_session")
+def clear_user_session(session_id: str = Form(...)):
+    clear_store(session_id)
+    if session_id in _UPLOAD_JOBS:
+        del _UPLOAD_JOBS[session_id]
+    return {"status": "cleared", "session_id": session_id}
+
+
+@app.post("/clear/{session_id}")
+def clear_session_path(session_id: str):
+    clear_store(session_id)
+    if session_id in _UPLOAD_JOBS:
+        del _UPLOAD_JOBS[session_id]
+    return {"status": "cleared", "session_id": session_id}
+
+
 @app.post("/confirm_text")
 def confirm_transcription_text(req: ConfirmTextRequest):
     if not req.items:

@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import uuid
 import pickle
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -32,15 +33,58 @@ try:
 except ImportError:
     TextEmbedding = None
 
-_EMBED_MODEL: Optional[Any] = None
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import VectorParams, Distance, PointStruct, Filter, FieldCondition, MatchValue
+except ImportError:
+    QdrantClient = None
 
-# In-memory vector store per session_id
+_EMBED_MODEL: Optional[Any] = None
+_QDRANT_CLIENT: Optional[Any] = None
+_QDRANT_INIT_ATTEMPTED: bool = False
+QDRANT_COLLECTION = "deadline_guardian_chunks"
+
+# In-memory vector store fallback per session_id
 # Structure: { session_id: { "chunks": List[Dict], "embeddings": np.ndarray, "last_accessed": float } }
 _STORES: Dict[str, Dict[str, Any]] = {}
 
 MAX_CHUNKS_PER_SESSION = 1000
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 SESSION_TTL_SECONDS = 7200  # 2 hours
+
+
+def get_qdrant_client() -> Optional[Any]:
+    """Initialize connection to Qdrant Cloud cluster if QDRANT_URL environment variable is provided."""
+    global _QDRANT_CLIENT, _QDRANT_INIT_ATTEMPTED
+    if _QDRANT_INIT_ATTEMPTED:
+        return _QDRANT_CLIENT
+
+    _QDRANT_INIT_ATTEMPTED = True
+    qdrant_url = os.getenv("QDRANT_URL", "").strip()
+    qdrant_api_key = os.getenv("QDRANT_API_KEY", "").strip()
+
+    if not qdrant_url or QdrantClient is None:
+        print("[Qdrant] QDRANT_URL not set or qdrant-client not installed. Using in-memory store.")
+        return None
+
+    try:
+        print(f"[Qdrant] Connecting to Qdrant Cloud at {qdrant_url}...")
+        client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key if qdrant_api_key else None, timeout=10.0)
+        
+        collections = [c.name for c in client.get_collections().collections]
+        if QDRANT_COLLECTION not in collections:
+            print(f"[Qdrant] Creating collection '{QDRANT_COLLECTION}'...")
+            client.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
+            )
+        _QDRANT_CLIENT = client
+        print("[Qdrant] Successfully connected and initialized Qdrant Cloud collection!")
+    except Exception as e:
+        print(f"[Warning] Could not connect to Qdrant Cloud: {e}. Falling back to in-memory store.")
+        _QDRANT_CLIENT = None
+
+    return _QDRANT_CLIENT
 
 
 def get_embedding_model() -> Any:
@@ -162,9 +206,22 @@ def cleanup_expired_sessions(ttl_seconds: int = SESSION_TTL_SECONDS) -> None:
 
 
 def clear_store(session_id: str) -> None:
-    """Clear all stored chunks and embeddings for session_id."""
+    """Clear all stored chunks and embeddings for session_id from Qdrant Cloud and local store."""
     if session_id in _STORES:
         del _STORES[session_id]
+
+    qdrant = get_qdrant_client()
+    if qdrant:
+        try:
+            qdrant.delete(
+                collection_name=QDRANT_COLLECTION,
+                points_selector=Filter(
+                    must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
+                )
+            )
+            print(f"[Qdrant] Successfully deleted all vectors for session '{session_id}' from Qdrant Cloud.")
+        except Exception as e:
+            print(f"[Warning] Failed to delete session '{session_id}' vectors from Qdrant: {e}")
 
 
 def add_to_store(
@@ -173,12 +230,25 @@ def add_to_store(
     progress_callback: Optional[Any] = None
 ) -> int:
     """
-    Embed and store chunks in-memory for session_id in small batches with live progress updates.
+    Embed and store chunks for session_id in Qdrant Cloud (if configured) and local in-memory store.
     Caps chunks per session at MAX_CHUNKS_PER_SESSION.
     """
     cleanup_expired_sessions()
+    qdrant = get_qdrant_client()
 
     if not chunks:
+        if qdrant:
+            try:
+                res = qdrant.scroll(
+                    collection_name=QDRANT_COLLECTION,
+                    scroll_filter=Filter(must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]),
+                    limit=1000,
+                    with_payload=False,
+                    with_vectors=False
+                )
+                return len(res[0])
+            except Exception:
+                pass
         return len(_STORES.get(session_id, {}).get("chunks", []))
 
     if session_id not in _STORES:
@@ -213,6 +283,25 @@ def add_to_store(
         b_embeds = embed_texts(batch_texts, batch_size=16)
         new_embeddings_list.append(b_embeds)
 
+        if qdrant:
+            points = []
+            for c, vec in zip(batch_chunks, b_embeds):
+                point_id = str(uuid.uuid4())
+                points.append(PointStruct(
+                    id=point_id,
+                    vector=vec.tolist(),
+                    payload={
+                        "session_id": session_id,
+                        "text": c.get("text", ""),
+                        "source": c.get("source", "unknown"),
+                        "page": c.get("page", 1)
+                    }
+                ))
+            try:
+                qdrant.upsert(collection_name=QDRANT_COLLECTION, points=points)
+            except Exception as e:
+                print(f"[Warning] Failed to upsert points into Qdrant Cloud: {e}")
+
     if new_embeddings_list:
         new_embeddings = np.vstack(new_embeddings_list)
         _STORES[session_id]["chunks"] = existing_chunks + chunks_to_add
@@ -226,11 +315,41 @@ def add_to_store(
 
 def retrieve(session_id: str, query: str, k: int = 6, min_score: float = 0.35) -> List[Dict[str, Any]]:
     """
-    Retrieve top k relevant chunks for query in session_id using cosine similarity.
+    Retrieve top k relevant chunks for query in session_id using Qdrant Cloud vector search or cosine similarity fallback.
     Filters out chunks with similarity score below min_score to avoid out-of-context citations.
     """
     cleanup_expired_sessions()
+    qdrant = get_qdrant_client()
 
+    if qdrant:
+        try:
+            query_matrix = embed_texts([query])
+            if query_matrix.size > 0:
+                query_vec = query_matrix[0].tolist()
+                hits = qdrant.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=query_vec,
+                    query_filter=Filter(
+                        must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
+                    ),
+                    limit=k,
+                    score_threshold=min_score
+                )
+                if hits:
+                    results = []
+                    for hit in hits:
+                        payload = hit.payload or {}
+                        results.append({
+                            "text": payload.get("text", ""),
+                            "source": payload.get("source", "unknown"),
+                            "page": payload.get("page", 1),
+                            "score": float(hit.score)
+                        })
+                    return results
+        except Exception as e:
+            print(f"[Warning] Qdrant search error: {e}. Falling back to in-memory store.")
+
+    # Fallback to local in-memory store
     if session_id not in _STORES or not _STORES[session_id]["chunks"]:
         return []
 
