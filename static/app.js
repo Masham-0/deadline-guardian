@@ -187,8 +187,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch(`/status/${sessionId}`);
         if (!isUploadPolling) return;
         if (res.ok) {
-          const data = await res.json();
-          if (!isUploadPolling) return;
+          const rawText = await res.text();
+          if (!isUploadPolling || !rawText) return;
+          let data;
+          try {
+            data = JSON.parse(rawText);
+          } catch (e) {
+            return;
+          }
+          if (!isUploadPolling || !data) return;
           if (data.status === "complete") {
             stopStatusPolling(true);
             setLoading(uploadBtn, false, "Upload & Process Notes");

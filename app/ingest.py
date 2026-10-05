@@ -195,7 +195,7 @@ def extract_text(
                 if text:
                     results.append({"text": text, "source": source_name, "page": idx})
 
-        # PPTX Files (Slide Text + Picture shapes)
+        # PPTX Files (Slide Text + Image-only slide OCR fallback)
         elif suffix == ".pptx":
             if Presentation is None:
                 raise ImportError("python-pptx is required. Run `pip install python-pptx`.")
@@ -204,7 +204,7 @@ def extract_text(
             total_slides = len(prs.slides)
 
             for idx, slide in enumerate(prs.slides, start=1):
-                if progress_callback:
+                if progress_callback and idx % 5 == 1:
                     progress_callback(f"Reading slide {idx} of {total_slides} for '{source_name}'...")
 
                 slide_texts = []
@@ -218,14 +218,14 @@ def extract_text(
 
                 text_content = "\n".join(slide_texts).strip()
 
-                # Process picture shape diagrams if any
-                if picture_blobs and vision_counter[0] < MAX_VISION_CALLS_PER_UPLOAD:
+                # Only run vision OCR if slide has no text content (< 10 chars) and has pictures
+                if len(text_content) < 10 and picture_blobs and vision_counter[0] < MAX_VISION_CALLS_PER_UPLOAD:
                     vision_counter[0] += 1
                     try:
                         pic_bytes, mime = resize_image_if_needed(picture_blobs[0])
-                        fig_desc = describe_image(pic_bytes, mime_type=mime, mode="FIGURES")
+                        fig_desc = describe_image(pic_bytes, mime_type=mime, mode="FULL")
                         if fig_desc and not fig_desc.startswith("[Vision Error]") and not fig_desc.startswith("[LLM Error]"):
-                            text_content = f"{text_content}\n\n[Slide Diagram/Figure]:\n{fig_desc}".strip()
+                            text_content = fig_desc.strip()
                     except Exception as e:
                         print(f"[Warning] Failed figure vision on slide {idx}: {e}")
 
