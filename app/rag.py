@@ -104,12 +104,12 @@ def get_embedding_model() -> Any:
 
 def chunk_text(
     docs: List[Dict[str, Any]],
-    chunk_size: int = 350,
-    chunk_overlap: int = 50
+    chunk_size: int = 200,
+    chunk_overlap: int = 35
 ) -> List[Dict[str, Any]]:
     """
-    Split extracted documents into optimal paragraph-aware chunks (~350 words with ~50 words overlap).
-    Preserves source and page metadata while maintaining fast ingestion and full semantic context.
+    Split extracted documents into paragraph-aware chunks (~200 words with ~35 words overlap).
+    Preserves source and page metadata.
     """
     chunks: List[Dict[str, Any]] = []
 
