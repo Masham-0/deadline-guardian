@@ -244,6 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
           }
+        }
       } catch (e) {
         // ignore transient network/polling errors
       }
