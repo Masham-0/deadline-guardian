@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, shutil
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -29,68 +29,82 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.post("/clear/{session_id}")
-def clear_session_store(session_id: str):
-    clear_store(session_id)
-    if session_id in _UPLOAD_JOBS:
-        del _UPLOAD_JOBS[session_id]
-    return {"session_id": session_id, "status": "cleared", "message": "Cleared all indexed notes."}
-
-
 # In-memory status job tracker per session_id
 _UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
 
 
-# Pydantic Request Models
-class AskRequest(BaseModel):
-    session_id: str
-    query: str
+def process_upload_in_background(session_id: str, file_records: List[Dict[str, Any]], temp_dir_path: str):
+    """Background task to extract, chunk, and index files without blocking HTTP requests."""
+    try:
+        def progress_callback(msg: str):
+            if session_id in _UPLOAD_JOBS:
+                _UPLOAD_JOBS[session_id]["message"] = msg
+                if "Skipping" in msg:
+                    _UPLOAD_JOBS[session_id]["skipped"].append(msg)
 
+        all_extracted: List[Dict[str, Any]] = []
+        processed_count = 0
 
-class TriageRequest(BaseModel):
-    session_id: str
-    hours_left: Optional[float] = Field(default=6.0, gt=0)
+        for record in file_records:
+            filename = record["filename"]
+            file_path = Path(record["path"])
+            try:
+                progress_callback(f"Reading '{filename}'...")
+                extracted = extract_text(file_path, progress_callback=progress_callback)
+                all_extracted.extend(extracted)
+                processed_count += 1
+            except Exception as e:
+                print(f"[Warning] Failed extraction on '{filename}': {e}")
+                if session_id in _UPLOAD_JOBS:
+                    _UPLOAD_JOBS[session_id]["skipped"].append(f"Failed '{filename}': {e}")
 
+        if not all_extracted:
+            if session_id in _UPLOAD_JOBS:
+                _UPLOAD_JOBS[session_id]["status"] = "error"
+                _UPLOAD_JOBS[session_id]["message"] = "No readable text found in uploaded files."
+            return
 
-class TranscribedItem(BaseModel):
-    text: str
-    source: str
-    page: Any
+        vision_items = [item for item in all_extracted if item.get("is_vision")]
+        text_items = [item for item in all_extracted if not item.get("is_vision")]
 
+        text_chunks_count = 0
+        if text_items:
+            progress_callback(f"Chunking {len(text_items)} text segments...")
+            chunks = chunk_text(text_items, chunk_size=150, chunk_overlap=30)
+            text_chunks_count = len(chunks)
+            progress_callback(f"Indexing {text_chunks_count} chunks into vector store...")
+            add_to_store(session_id, chunks)
 
-class ConfirmTextRequest(BaseModel):
-    session_id: str
-    items: List[TranscribedItem]
+        total_chunks = add_to_store(session_id, [])
 
+        if vision_items:
+            _UPLOAD_JOBS[session_id]["status"] = "needs_confirmation"
+            _UPLOAD_JOBS[session_id]["message"] = "Transcriptions ready for your review."
+            _UPLOAD_JOBS[session_id]["transcriptions"] = vision_items
+            _UPLOAD_JOBS[session_id]["chunks_created"] = text_chunks_count
+            _UPLOAD_JOBS[session_id]["files_processed"] = processed_count
+            _UPLOAD_JOBS[session_id]["total_chunks"] = total_chunks
+        else:
+            _UPLOAD_JOBS[session_id]["status"] = "complete"
+            _UPLOAD_JOBS[session_id]["message"] = "Ingestion complete."
+            _UPLOAD_JOBS[session_id]["chunks_created"] = text_chunks_count
+            _UPLOAD_JOBS[session_id]["files_processed"] = processed_count
+            _UPLOAD_JOBS[session_id]["total_chunks"] = total_chunks
 
-MAX_FILES = 10
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
-
-
-@app.get("/config")
-def get_config():
-    _, _, model = get_llm_config()
-    return {"model": model}
-
-
-@app.get("/status/{session_id}")
-def get_status(session_id: str):
-    job = _UPLOAD_JOBS.get(session_id, {
-        "status": "idle",
-        "message": "No active processing job.",
-        "skipped": []
-    })
-    return job
+    except Exception as e:
+        if session_id in _UPLOAD_JOBS:
+            _UPLOAD_JOBS[session_id]["status"] = "error"
+            _UPLOAD_JOBS[session_id]["message"] = f"Ingestion error: {str(e)}"
+    finally:
+        try:
+            shutil.rmtree(temp_dir_path, ignore_errors=True)
+        except Exception:
+            pass
 
 
 @app.post("/upload")
 async def upload_files(
+    background_tasks: BackgroundTasks,
     session_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(...)
 ):
@@ -110,96 +124,44 @@ async def upload_files(
         "status": "processing",
         "message": "Validating uploaded files...",
         "skipped": [],
-        "transcriptions": []
+        "transcriptions": [],
+        "files_processed": 0,
+        "chunks_created": 0,
+        "total_chunks": 0
     }
 
-    def progress_callback(msg: str):
-        if session_id in _UPLOAD_JOBS:
-            _UPLOAD_JOBS[session_id]["message"] = msg
-            if "Skipping" in msg:
-                _UPLOAD_JOBS[session_id]["skipped"].append(msg)
+    temp_dir = tempfile.mkdtemp()
+    file_records = []
 
-    all_extracted: List[Dict[str, Any]] = []
-    processed_count = 0
+    for file in files:
+        filename = file.filename or "unknown"
+        ext = Path(filename).suffix.lower()
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        for file in files:
-            filename = file.filename or "unknown"
-            ext = Path(filename).suffix.lower()
+        if ext not in SUPPORTED_EXTENSIONS:
+            _UPLOAD_JOBS[session_id]["status"] = "error"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{ext}' for file '{filename}'. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+            )
 
-            if ext not in SUPPORTED_EXTENSIONS:
-                _UPLOAD_JOBS[session_id]["status"] = "error"
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unsupported file type '{ext}' for file '{filename}'. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
-                )
+        contents = await file.read()
+        if len(contents) > MAX_FILE_SIZE:
+            _UPLOAD_JOBS[session_id]["status"] = "error"
+            raise HTTPException(
+                status_code=400,
+                detail=f"File '{filename}' exceeds maximum size limit of 10MB."
+            )
 
-            contents = await file.read()
-            if len(contents) > MAX_FILE_SIZE:
-                _UPLOAD_JOBS[session_id]["status"] = "error"
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File '{filename}' exceeds maximum size limit of 10MB."
-                )
+        temp_file_path = Path(temp_dir) / filename
+        temp_file_path.write_bytes(contents)
+        file_records.append({"filename": filename, "path": str(temp_file_path)})
 
-            temp_file_path = Path(temp_dir) / filename
-            temp_file_path.write_bytes(contents)
-
-            try:
-                progress_callback(f"Reading '{filename}'...")
-                extracted = extract_text(temp_file_path, progress_callback=progress_callback)
-                all_extracted.extend(extracted)
-                processed_count += 1
-            except Exception as e:
-                _UPLOAD_JOBS[session_id]["status"] = "error"
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Failed to process '{filename}': {str(e)}"
-                )
-
-    if not all_extracted:
-        _UPLOAD_JOBS[session_id]["status"] = "error"
-        raise HTTPException(status_code=400, detail="No readable text found in uploaded files.")
-
-    # Separate vision items (handwritten/diagram transcriptions needing review)
-    vision_items = [item for item in all_extracted if item.get("is_vision")]
-    text_items = [item for item in all_extracted if not item.get("is_vision")]
-
-    # Immediately index standard text items
-    text_chunks_count = 0
-    if text_items:
-        progress_callback(f"Chunking {len(text_items)} text segments...")
-        chunks = chunk_text(text_items, chunk_size=150, chunk_overlap=30)
-        text_chunks_count = len(chunks)
-        progress_callback(f"Indexing {text_chunks_count} chunks into vector store...")
-        add_to_store(session_id, chunks)
-
-    if vision_items:
-        _UPLOAD_JOBS[session_id]["status"] = "needs_confirmation"
-        _UPLOAD_JOBS[session_id]["message"] = "Transcriptions ready for your review."
-        _UPLOAD_JOBS[session_id]["transcriptions"] = vision_items
-
-        return {
-            "session_id": session_id,
-            "requires_confirmation": True,
-            "transcriptions": vision_items,
-            "text_chunks_created": text_chunks_count,
-            "files_processed": processed_count,
-            "skipped": _UPLOAD_JOBS[session_id]["skipped"]
-        }
-
-    # No vision items -> indexing complete
-    total_chunks = add_to_store(session_id, [])
-    _UPLOAD_JOBS[session_id]["status"] = "complete"
-    _UPLOAD_JOBS[session_id]["message"] = "Ingestion complete."
+    background_tasks.add_task(process_upload_in_background, session_id, file_records, temp_dir)
 
     return {
         "session_id": session_id,
-        "requires_confirmation": False,
-        "files_processed": processed_count,
-        "chunks_created": text_chunks_count,
-        "total_chunks": total_chunks,
-        "skipped": _UPLOAD_JOBS[session_id]["skipped"]
+        "status": "processing",
+        "message": "Files received. Processing background ingestion..."
     }
 
 

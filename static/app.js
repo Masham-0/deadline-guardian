@@ -189,7 +189,34 @@ document.addEventListener("DOMContentLoaded", () => {
         if (res.ok) {
           const data = await res.json();
           if (!isUploadPolling) return;
-          if (data.message && data.message !== lastLoggedMsg) {
+          if (data.status === "complete") {
+            stopStatusPolling(true);
+            setLoading(uploadBtn, false, "Upload & Process Notes");
+            const fileCount = data.files_processed || selectedFiles.length || 1;
+            const countStr = fileCount === 1 ? "1 file" : `${fileCount} files`;
+            showNotice(
+              `Successfully ingested ${countStr} (${data.chunks_created || 0} new chunks). Total stored: ${data.total_chunks || 0} chunks.`,
+              "success"
+            );
+            selectedFiles = [];
+            renderFileList();
+          } else if (data.status === "needs_confirmation") {
+            stopStatusPolling(true);
+            setLoading(uploadBtn, false, "Upload & Process Notes");
+            const fileCount = data.files_processed || selectedFiles.length || 1;
+            const countStr = fileCount === 1 ? "1 file" : `${fileCount} files`;
+            showNotice(
+              `Successfully processed ${countStr}. AI transcribed ${data.transcriptions ? data.transcriptions.length : 0} items needing your review below.`,
+              "success"
+            );
+            if (data.transcriptions) renderTranscriptionReview(data.transcriptions);
+            selectedFiles = [];
+            renderFileList();
+          } else if (data.status === "error") {
+            stopStatusPolling(false);
+            setLoading(uploadBtn, false, "Upload & Process Notes");
+            showNotice(`Upload Error: ${data.message || "Failed to ingest files"}`, "danger");
+          } else if (data.message && data.message !== lastLoggedMsg) {
             const msg = data.message;
             if (msg.includes("Preparing") || msg.includes("Validating")) {
               updateUploadStage(1, msg, 15, msg);
@@ -199,8 +226,6 @@ document.addEventListener("DOMContentLoaded", () => {
               updateUploadStage(3, msg, 70, msg);
             } else if (msg.includes("Index") || msg.includes("review") || msg.includes("Confirm")) {
               updateUploadStage(4, msg, 90, msg);
-            } else if (msg.includes("complete") || msg.includes("Complete")) {
-              stopStatusPolling(true);
             } else {
               if (uploadPipelineSub) uploadPipelineSub.textContent = msg;
               if (uploadPipelineLog) {
@@ -279,31 +304,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) {
         throw new Error(data.detail || "Upload failed");
       }
-
-      stopStatusPolling();
-
-      const countStr = data.files_processed === 1 ? "1 file" : `${data.files_processed} files`;
-
-      if (data.requires_confirmation && data.transcriptions && data.transcriptions.length > 0) {
-        showNotice(
-          `Successfully processed ${countStr}. AI transcribed ${data.transcriptions.length} items needing your review below.`,
-          "success"
-        );
-        renderTranscriptionReview(data.transcriptions);
-      } else {
-        showNotice(
-          `Successfully ingested ${countStr} (${data.chunks_created} new chunks). Total stored: ${data.total_chunks} chunks.`,
-          "success"
-        );
-      }
-
-      selectedFiles = [];
-      renderFileList();
+      // Background worker started on server.
+      // statusPollTimer handles live stage updates and completion!
     } catch (err) {
       stopStatusPolling(false);
-      showNotice(`Upload Error: ${err.message}`, "danger");
-    } finally {
       setLoading(uploadBtn, false, "Upload & Process Notes");
+      showNotice(`Upload Error: ${err.message}`, "danger");
     }
   });
 
