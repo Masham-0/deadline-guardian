@@ -78,7 +78,7 @@ def process_upload_in_background(session_id: str, file_records: List[Dict[str, A
             chunks = chunk_text(text_items, chunk_size=150, chunk_overlap=30)
             text_chunks_count = len(chunks)
             progress_callback(f"Indexing {text_chunks_count} chunks into vector store...")
-            add_to_store(session_id, chunks)
+            add_to_store(session_id, chunks, progress_callback=progress_callback)
 
         total_chunks = add_to_store(session_id, [])
 
@@ -179,8 +179,26 @@ async def upload_files(
 def get_upload_status(session_id: str):
     job = _UPLOAD_JOBS.get(session_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Session or upload job not found.")
+        return {
+            "status": "processing",
+            "message": "Initializing upload session...",
+            "skipped": [],
+            "transcriptions": [],
+            "files_processed": 0,
+            "chunks_created": 0,
+            "total_chunks": 0
+        }
     return job
+
+
+@app.get("/config")
+def get_config():
+    cfg = get_llm_config()
+    return {
+        "model": cfg.get("model_name", "OpenAI / Gemini"),
+        "max_files": MAX_FILES,
+        "max_file_size_mb": 10
+    }
 
 
 @app.post("/confirm_text")

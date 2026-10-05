@@ -125,11 +125,18 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
     return vectors / norms
 
 
-def embed_texts(texts: List[str]) -> np.ndarray:
-    """Generate vector embeddings for a list of text strings."""
+def embed_texts(texts: List[str], batch_size: int = 16) -> np.ndarray:
+    """Generate vector embeddings for a list of text strings in small batches to preserve memory."""
+    if not texts:
+        return np.empty((0, 384), dtype=np.float32)
     model = get_embedding_model()
-    embeddings_list = list(model.embed(texts))
-    matrix = np.array(embeddings_list, dtype=np.float32)
+    all_embeddings = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        batch_embeds = list(model.embed(batch, batch_size=batch_size))
+        all_embeddings.extend(batch_embeds)
+        time.sleep(0.005)  # yield CPU briefly to allow async background polling
+    matrix = np.array(all_embeddings, dtype=np.float32)
     return _normalize(matrix)
 
 
@@ -150,9 +157,13 @@ def clear_store(session_id: str) -> None:
         del _STORES[session_id]
 
 
-def add_to_store(session_id: str, chunks: List[Dict[str, Any]]) -> int:
+def add_to_store(
+    session_id: str,
+    chunks: List[Dict[str, Any]],
+    progress_callback: Optional[Any] = None
+) -> int:
     """
-    Embed and store chunks in-memory for session_id.
+    Embed and store chunks in-memory for session_id in small batches with live progress updates.
     Caps chunks per session at MAX_CHUNKS_PER_SESSION.
     """
     cleanup_expired_sessions()
@@ -177,15 +188,28 @@ def add_to_store(session_id: str, chunks: List[Dict[str, Any]]) -> int:
         return len(existing_chunks)
 
     chunks_to_add = chunks[:available_space]
-    texts = [c["text"] for c in chunks_to_add]
+    total_to_add = len(chunks_to_add)
 
-    new_embeddings = embed_texts(texts)
+    # Process embedding in batches of 16 for memory efficiency & live progress updates
+    batch_size = 16
+    new_embeddings_list = []
 
-    _STORES[session_id]["chunks"] = existing_chunks + chunks_to_add
-    if existing_embeddings.size == 0:
-        _STORES[session_id]["embeddings"] = new_embeddings
-    else:
-        _STORES[session_id]["embeddings"] = np.vstack([existing_embeddings, new_embeddings])
+    for i in range(0, total_to_add, batch_size):
+        batch_chunks = chunks_to_add[i:i + batch_size]
+        batch_texts = [c["text"] for c in batch_chunks]
+        if progress_callback:
+            progress_callback(f"Indexing chunks ({min(i + batch_size, total_to_add)}/{total_to_add})...")
+        
+        b_embeds = embed_texts(batch_texts, batch_size=16)
+        new_embeddings_list.append(b_embeds)
+
+    if new_embeddings_list:
+        new_embeddings = np.vstack(new_embeddings_list)
+        _STORES[session_id]["chunks"] = existing_chunks + chunks_to_add
+        if existing_embeddings.size == 0:
+            _STORES[session_id]["embeddings"] = new_embeddings
+        else:
+            _STORES[session_id]["embeddings"] = np.vstack([existing_embeddings, new_embeddings])
 
     return len(_STORES[session_id]["chunks"])
 

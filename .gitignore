@@ -5,3 +5,4 @@ __pycache__/
 .cache/
 .store.pkl
 .store.json
+blocks/
