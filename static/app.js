@@ -244,11 +244,10 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
           }
-        }
       } catch (e) {
-        // ignore polling errors
+        // ignore transient network/polling errors
       }
-    }, 500);
+    }, 2500);
   }
 
   function stopStatusPolling(success = true) {

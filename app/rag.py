@@ -16,6 +16,13 @@ if hf_token:
     os.environ["HF_TOKEN"] = hf_token
     os.environ["HUGGINGFACE_HUB_TOKEN"] = hf_token
 
+# Limit thread concurrency in ONNX/FastEmbed to prevent starving Uvicorn event loop on single/dual core hosting (Render)
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 # Ensure fastembed cache directory is set to project-local .cache/fastembed if not provided
 if "FASTEMBED_CACHE_DIR" not in os.environ:
     os.environ["FASTEMBED_CACHE_DIR"] = str(Path(__file__).parent.parent / ".cache" / "fastembed")
@@ -37,14 +44,17 @@ SESSION_TTL_SECONDS = 7200  # 2 hours
 
 
 def get_embedding_model() -> Any:
-    """Lazy-load fastembed BAAI/bge-small-en-v1.5 embedding model."""
+    """Lazy-load fastembed BAAI/bge-small-en-v1.5 embedding model with single-thread CPU execution."""
     global _EMBED_MODEL
     if _EMBED_MODEL is None:
         if TextEmbedding is None:
             raise ImportError("fastembed is required. Run `pip install fastembed`.")
         cache_dir = os.environ.get("FASTEMBED_CACHE_DIR")
         print(f"Loading embedding model ({EMBEDDING_MODEL_NAME}) from cache_dir={cache_dir}...")
-        _EMBED_MODEL = TextEmbedding(model_name=EMBEDDING_MODEL_NAME, cache_dir=cache_dir)
+        try:
+            _EMBED_MODEL = TextEmbedding(model_name=EMBEDDING_MODEL_NAME, cache_dir=cache_dir, threads=1)
+        except TypeError:
+            _EMBED_MODEL = TextEmbedding(model_name=EMBEDDING_MODEL_NAME, cache_dir=cache_dir)
     return _EMBED_MODEL
 
 
@@ -135,7 +145,7 @@ def embed_texts(texts: List[str], batch_size: int = 16) -> np.ndarray:
         batch = texts[i:i + batch_size]
         batch_embeds = list(model.embed(batch, batch_size=batch_size))
         all_embeddings.extend(batch_embeds)
-        time.sleep(0.005)  # yield CPU briefly to allow async background polling
+        time.sleep(0.04)  # 40ms yield to ensure Uvicorn event loop and Render proxy handle HTTP status polling
     matrix = np.array(all_embeddings, dtype=np.float32)
     return _normalize(matrix)
 

@@ -193,12 +193,19 @@ def get_upload_status(session_id: str):
 
 @app.get("/config")
 def get_config():
-    cfg = get_llm_config()
-    return {
-        "model": cfg.get("model_name", "OpenAI / Gemini"),
-        "max_files": MAX_FILES,
-        "max_file_size_mb": 10
-    }
+    try:
+        _, _, model = get_llm_config()
+        return {
+            "model": model,
+            "max_files": MAX_FILES,
+            "max_file_size_mb": 10
+        }
+    except Exception:
+        return {
+            "model": "OpenAI / Gemini",
+            "max_files": MAX_FILES,
+            "max_file_size_mb": 10
+        }
 
 
 @app.post("/confirm_text")
