@@ -379,13 +379,18 @@ def deadline_triage_stream(req: TriageRequest):
     return StreamingResponse(generate_triage_stream(), media_type="text/event-stream")
 
 
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health_check():
+    return {"status": "ok"}
+
+
 # Mount Static Files
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def read_root():
     index_path = static_dir / "index.html"
     if index_path.exists():
