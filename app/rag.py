@@ -179,7 +179,7 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
     return vectors / norms
 
 
-def embed_texts(texts: List[str], batch_size: int = 24) -> np.ndarray:
+def embed_texts(texts: List[str], batch_size: int = 12) -> np.ndarray:
     """Generate vector embeddings for a list of text strings in optimal batches for maximum speed."""
     if not texts:
         return np.empty((0, 384), dtype=np.float32)
@@ -189,7 +189,7 @@ def embed_texts(texts: List[str], batch_size: int = 24) -> np.ndarray:
         batch = texts[i:i + batch_size]
         batch_embeds = list(model.embed(batch, batch_size=batch_size))
         all_embeddings.extend(batch_embeds)
-        time.sleep(0.03)  # 30ms yield tick
+        time.sleep(0.15)  # 150ms yield tick for Uvicorn event loop
     matrix = np.array(all_embeddings, dtype=np.float32)
     return _normalize(matrix)
 
@@ -270,8 +270,8 @@ def add_to_store(
     chunks_to_add = chunks[:available_space]
     total_to_add = len(chunks_to_add)
 
-    # Process embedding in optimal batches of 24 for high-speed indexing
-    batch_size = 24
+    # Process embedding in optimal batches of 12 for high-speed indexing without CPU starvation
+    batch_size = 12
     new_embeddings_list = []
 
     for i in range(0, total_to_add, batch_size):
@@ -280,7 +280,7 @@ def add_to_store(
         if progress_callback:
             progress_callback(f"Indexing chunks ({min(i + batch_size, total_to_add)}/{total_to_add})...")
         
-        b_embeds = embed_texts(batch_texts, batch_size=24)
+        b_embeds = embed_texts(batch_texts, batch_size=12)
         new_embeddings_list.append(b_embeds)
 
         if qdrant:
