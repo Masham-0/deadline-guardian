@@ -131,7 +131,6 @@ def process_upload_in_background(session_id: str, file_records: List[Dict[str, A
 
 @app.post("/upload")
 async def upload_files(
-    background_tasks: BackgroundTasks,
     session_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(...)
 ):
@@ -184,7 +183,14 @@ async def upload_files(
             temp_file_path.write_bytes(contents)
             file_records.append({"filename": filename, "path": str(temp_file_path)})
 
-        background_tasks.add_task(process_upload_in_background, session_id, file_records, temp_dir)
+        # Use a real OS thread so CPU-bound embedding never blocks Uvicorn's HTTP workers
+        import threading
+        t = threading.Thread(
+            target=process_upload_in_background,
+            args=(session_id, file_records, temp_dir),
+            daemon=True
+        )
+        t.start()
 
         return {
             "session_id": session_id,
