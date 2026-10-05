@@ -30,6 +30,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Constants
+MAX_FILES = 10
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB per file
+
 # In-memory status job tracker per session_id
 _UPLOAD_JOBS: Dict[str, Dict[str, Any]] = {}
 
@@ -169,6 +173,14 @@ async def upload_files(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+
+
+@app.get("/status/{session_id}")
+def get_upload_status(session_id: str):
+    job = _UPLOAD_JOBS.get(session_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Session or upload job not found.")
+    return job
 
 
 @app.post("/confirm_text")
