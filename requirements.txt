@@ -9,4 +9,3 @@ uvicorn[standard]>=0.22.0
 python-multipart>=0.0.6
 Pillow>=9.0.0
 pypdfium2>=4.0.0
-qdrant-client>=1.7.0
