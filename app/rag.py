@@ -104,12 +104,12 @@ def get_embedding_model() -> Any:
 
 def chunk_text(
     docs: List[Dict[str, Any]],
-    chunk_size: int = 150,
-    chunk_overlap: int = 30
+    chunk_size: int = 350,
+    chunk_overlap: int = 50
 ) -> List[Dict[str, Any]]:
     """
-    Split extracted documents into fine-grained paragraph-aware chunks (~150 words with ~30 words overlap).
-    Preserves source and page metadata.
+    Split extracted documents into optimal paragraph-aware chunks (~350 words with ~50 words overlap).
+    Preserves source and page metadata while maintaining fast ingestion and full semantic context.
     """
     chunks: List[Dict[str, Any]] = []
 
@@ -179,8 +179,8 @@ def _normalize(vectors: np.ndarray) -> np.ndarray:
     return vectors / norms
 
 
-def embed_texts(texts: List[str], batch_size: int = 8) -> np.ndarray:
-    """Generate vector embeddings for a list of text strings in small micro-batches to preserve CPU & memory."""
+def embed_texts(texts: List[str], batch_size: int = 24) -> np.ndarray:
+    """Generate vector embeddings for a list of text strings in optimal batches for maximum speed."""
     if not texts:
         return np.empty((0, 384), dtype=np.float32)
     model = get_embedding_model()
@@ -189,7 +189,7 @@ def embed_texts(texts: List[str], batch_size: int = 8) -> np.ndarray:
         batch = texts[i:i + batch_size]
         batch_embeds = list(model.embed(batch, batch_size=batch_size))
         all_embeddings.extend(batch_embeds)
-        time.sleep(0.12)  # 120ms yield to give Uvicorn event loop ample CPU time for HTTP status polling
+        time.sleep(0.03)  # 30ms yield tick
     matrix = np.array(all_embeddings, dtype=np.float32)
     return _normalize(matrix)
 
@@ -270,8 +270,8 @@ def add_to_store(
     chunks_to_add = chunks[:available_space]
     total_to_add = len(chunks_to_add)
 
-    # Process embedding in micro-batches of 8 for CPU & memory efficiency
-    batch_size = 8
+    # Process embedding in optimal batches of 24 for high-speed indexing
+    batch_size = 24
     new_embeddings_list = []
 
     for i in range(0, total_to_add, batch_size):
@@ -280,7 +280,7 @@ def add_to_store(
         if progress_callback:
             progress_callback(f"Indexing chunks ({min(i + batch_size, total_to_add)}/{total_to_add})...")
         
-        b_embeds = embed_texts(batch_texts, batch_size=8)
+        b_embeds = embed_texts(batch_texts, batch_size=24)
         new_embeddings_list.append(b_embeds)
 
         if qdrant:

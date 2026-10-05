@@ -75,7 +75,7 @@ def process_upload_in_background(session_id: str, file_records: List[Dict[str, A
         text_chunks_count = 0
         if text_items:
             progress_callback(f"Chunking {len(text_items)} text segments...")
-            chunks = chunk_text(text_items, chunk_size=150, chunk_overlap=30)
+            chunks = chunk_text(text_items, chunk_size=350, chunk_overlap=50)
             text_chunks_count = len(chunks)
             progress_callback(f"Indexing {text_chunks_count} chunks into vector store...")
             add_to_store(session_id, chunks, progress_callback=progress_callback)
@@ -230,7 +230,7 @@ def confirm_transcription_text(req: ConfirmTextRequest):
         raise HTTPException(status_code=400, detail="No transcribed items provided for confirmation.")
 
     docs = [{"text": item.text, "source": item.source, "page": item.page} for item in req.items]
-    chunks = chunk_text(docs, chunk_size=150, chunk_overlap=30)
+    chunks = chunk_text(docs, chunk_size=350, chunk_overlap=50)
     total_chunks = add_to_store(req.session_id, chunks)
 
     if req.session_id in _UPLOAD_JOBS:
