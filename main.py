@@ -108,61 +108,66 @@ async def upload_files(
     session_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(...)
 ):
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided.")
+    try:
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided.")
 
-    if len(files) > MAX_FILES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Too many files. Maximum allowed per upload is {MAX_FILES} files."
-        )
-
-    if not session_id or not session_id.strip():
-        session_id = str(uuid.uuid4())
-
-    _UPLOAD_JOBS[session_id] = {
-        "status": "processing",
-        "message": "Validating uploaded files...",
-        "skipped": [],
-        "transcriptions": [],
-        "files_processed": 0,
-        "chunks_created": 0,
-        "total_chunks": 0
-    }
-
-    temp_dir = tempfile.mkdtemp()
-    file_records = []
-
-    for file in files:
-        filename = file.filename or "unknown"
-        ext = Path(filename).suffix.lower()
-
-        if ext not in SUPPORTED_EXTENSIONS:
-            _UPLOAD_JOBS[session_id]["status"] = "error"
+        if len(files) > MAX_FILES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file type '{ext}' for file '{filename}'. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+                detail=f"Too many files. Maximum allowed per upload is {MAX_FILES} files."
             )
 
-        contents = await file.read()
-        if len(contents) > MAX_FILE_SIZE:
-            _UPLOAD_JOBS[session_id]["status"] = "error"
-            raise HTTPException(
-                status_code=400,
-                detail=f"File '{filename}' exceeds maximum size limit of 10MB."
-            )
+        if not session_id or not session_id.strip():
+            session_id = str(uuid.uuid4())
 
-        temp_file_path = Path(temp_dir) / filename
-        temp_file_path.write_bytes(contents)
-        file_records.append({"filename": filename, "path": str(temp_file_path)})
+        _UPLOAD_JOBS[session_id] = {
+            "status": "processing",
+            "message": "Validating uploaded files...",
+            "skipped": [],
+            "transcriptions": [],
+            "files_processed": 0,
+            "chunks_created": 0,
+            "total_chunks": 0
+        }
 
-    background_tasks.add_task(process_upload_in_background, session_id, file_records, temp_dir)
+        temp_dir = tempfile.mkdtemp()
+        file_records = []
 
-    return {
-        "session_id": session_id,
-        "status": "processing",
-        "message": "Files received. Processing background ingestion..."
-    }
+        for file in files:
+            filename = file.filename or "unknown"
+            ext = Path(filename).suffix.lower()
+
+            if ext not in SUPPORTED_EXTENSIONS:
+                _UPLOAD_JOBS[session_id]["status"] = "error"
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type '{ext}' for file '{filename}'. Allowed: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+                )
+
+            contents = await file.read()
+            if len(contents) > MAX_FILE_SIZE:
+                _UPLOAD_JOBS[session_id]["status"] = "error"
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File '{filename}' exceeds maximum size limit of 10MB."
+                )
+
+            temp_file_path = Path(temp_dir) / filename
+            temp_file_path.write_bytes(contents)
+            file_records.append({"filename": filename, "path": str(temp_file_path)})
+
+        background_tasks.add_task(process_upload_in_background, session_id, file_records, temp_dir)
+
+        return {
+            "session_id": session_id,
+            "status": "processing",
+            "message": "Files received. Processing background ingestion..."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 
 @app.post("/confirm_text")

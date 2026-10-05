@@ -300,9 +300,16 @@ document.addEventListener("DOMContentLoaded", () => {
         body: formData,
       });
 
-      const data = await res.json();
+      const responseText = await res.text();
+      let data = {};
+      try {
+        if (responseText) data = JSON.parse(responseText);
+      } catch (e) {
+        data = { detail: responseText || `Upload failed with HTTP status ${res.status}` };
+      }
+
       if (!res.ok) {
-        throw new Error(data.detail || "Upload failed");
+        throw new Error(data.detail || data.message || `Upload failed with HTTP status ${res.status}`);
       }
       // Background worker started on server.
       // statusPollTimer handles live stage updates and completion!
